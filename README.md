@@ -30,11 +30,13 @@ Input file path
 
 #### Input file format
 
+```
 n
 board 1
 board 2
 ...
 board n
+```
 
 each board format is base81
 for detail: https://github.com/primenumber/issen
