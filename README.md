@@ -53,3 +53,7 @@ Maximum search depth (without pass), equal to maximum number of empty position
 
 Depth of naive search
 Recommended: min(9, DEPTH-1)
+
+## LICENSE
+
+GPLv3
