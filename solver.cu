@@ -74,8 +74,8 @@ class MobilityGenerator {
  public:
   __host__ __device__ MobilityGenerator(ull player, ull opponent)
     : x(~opponent), y(~player) {}
-  __host__ __device__ MobilityGenerator(const MobilityGenerator &) = default;
-  __host__ __device__ MobilityGenerator& operator=(const MobilityGenerator &) = default;
+  MobilityGenerator(const MobilityGenerator &) = default;
+  MobilityGenerator& operator=(const MobilityGenerator &) = default;
   __host__ __device__ ull player_pos() const {
     return x & ~y;
   }
@@ -137,8 +137,8 @@ struct Node {
     : mg(mg), alpha(alpha), beta(beta), not_pass(false), passed_prev(passed_prev) {}
   __host__ __device__ Node(const MobilityGenerator &mg)
     : Node(mg, -64, 64) {}
-  __host__ __device__ Node(const Node &) = default;
-  __host__ __device__ Node& operator=(const Node &) = default;
+  Node(const Node &) = default;
+  Node& operator=(const Node &) = default;
 };
 
 extern __shared__ Node nodes_stack[];
@@ -206,7 +206,7 @@ class UpperNode {
     }
     thrust::sort_by_key(thrust::seq, cntary, cntary + possize, posary);
   }
-  __device__ UpperNode& operator=(const UpperNode &) = default;
+  UpperNode& operator=(const UpperNode &) = default;
   __device__ bool completed() const {
     return index == possize;
   }
@@ -373,16 +373,6 @@ __device__ void solve_all(Node *nodes, UpperNode *upper_stack, const size_t coun
     }
   }
 }
-
-/*
-__global__ void alpha_beta_loop(Node *nodes, size_t count) {
-  size_t index = threadIdx.x + blockIdx.x * blockDim.x;
-  if (index < count) {
-    nodes_stack[threadIdx.x] = nodes[index];
-    solve_all(nodes, count, index);
-  }
-}
-*/
 
 __global__ void alpha_beta_kernel(Node *nodes, UpperNode *upper_stack, size_t count, size_t upper_stack_size) {
   size_t index = threadIdx.x + blockIdx.x * blockDim.x;
