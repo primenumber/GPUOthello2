@@ -175,16 +175,32 @@ __device__ void pass(int stack_index, const size_t upper_stack_size) {
   node.passed_prev = true;
 }
 
+__device__ ull mobility_impl(ull player, ull opponent, int simd_index) {
+  ull PP, mOO, MM, flip_l, flip_r, pre_l, pre_r, shift2;
+  ull shift1[4] = { 1, 7, 9, 8 };
+  ull mflipH[4] = { 0x7e7e7e7e7e7e7e7eULL, 0x7e7e7e7e7e7e7e7eULL, 0x7e7e7e7e7e7e7e7eULL, 0xffffffffffffffffULL };
+
+  PP = player;
+  mOO = opponent & mflipH[simd_index];
+  flip_l  = mOO & (PP << shift1[simd_index]);       flip_r  = mOO & (PP >> shift1[simd_index]);
+  flip_l |= mOO & (flip_l << shift1[simd_index]);   flip_r |= mOO & (flip_r >> shift1[simd_index]);
+  pre_l   = mOO & (mOO << shift1[simd_index]);      pre_r   = pre_l >> shift1[simd_index];
+  shift2 = shift1[simd_index] + shift1[simd_index];
+  flip_l |= pre_l & (flip_l << shift2);             flip_r |= pre_r & (flip_r >> shift2);
+  flip_l |= pre_l & (flip_l << shift2);             flip_r |= pre_r & (flip_r >> shift2);
+  MM = flip_l << shift1[simd_index];                MM |= flip_r >> shift1[simd_index];
+  return MM & ~(player|opponent);
+}
+
+__device__ ull mobility(ull player, ull opponent) {
+  return mobility_impl(player, opponent, 0)
+    | mobility_impl(player, opponent, 1)
+    | mobility_impl(player, opponent, 2)
+    | mobility_impl(player, opponent, 3);
+}
+
 __device__ int mobility_count(ull player, ull opponent) {
-  int cnt = 0;
-  MobilityGenerator mg(player, opponent);
-  while(!mg.completed()) {
-    ull next_bit = mg.next_bit();
-    int pos = __popcll(next_bit - 1);
-    ull flip = flip_seq(player, opponent, pos);
-    if (flip) ++cnt;
-  }
-  return cnt;
+  return __popcll(mobility(player, opponent));
 }
 
 class UpperNode {
