@@ -175,7 +175,7 @@ __device__ void pass(int stack_index, const size_t upper_stack_size) {
   node.passed_prev = true;
 }
 
-__device__ ull mobility_impl(ull player, ull opponent, int simd_index) {
+__host__ __device__ ull mobility_impl(ull player, ull opponent, int simd_index) {
   ull PP, mOO, MM, flip_l, flip_r, pre_l, pre_r, shift2;
   ull shift1[4] = { 1, 7, 9, 8 };
   ull mflipH[4] = { 0x7e7e7e7e7e7e7e7eULL, 0x7e7e7e7e7e7e7e7eULL, 0x7e7e7e7e7e7e7e7eULL, 0xffffffffffffffffULL };
@@ -192,15 +192,19 @@ __device__ ull mobility_impl(ull player, ull opponent, int simd_index) {
   return MM & ~(player|opponent);
 }
 
-__device__ ull mobility(ull player, ull opponent) {
+__host__ __device__ ull mobility(ull player, ull opponent) {
   return mobility_impl(player, opponent, 0)
     | mobility_impl(player, opponent, 1)
     | mobility_impl(player, opponent, 2)
     | mobility_impl(player, opponent, 3);
 }
 
-__device__ int mobility_count(ull player, ull opponent) {
+__host__ __device__ int mobility_count(ull player, ull opponent) {
+#ifdef __CUDA_ARCH__
   return __popcll(mobility(player, opponent));
+#else
+  return __builtin_popcountll(mobility(player, opponent));
+#endif
 }
 
 class UpperNode {
