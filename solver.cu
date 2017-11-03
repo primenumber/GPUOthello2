@@ -2,62 +2,10 @@
 #include <cstdlib>
 #include <thrust/sort.h>
 #include <thrust/execution_policy.h>
+#include "board.cuh"
 
 constexpr int nodesPerBlock = 64;
 constexpr int lower_stack_depth = 9;
-
-__constant__ ull mask1[4] = {
-  0x0080808080808080ULL,
-  0x7f00000000000000ULL,
-  0x0102040810204000ULL,
-  0x0040201008040201ULL
-};
-constexpr ull mask1_host[4] = {
-  0x0080808080808080ULL,
-  0x7f00000000000000ULL,
-  0x0102040810204000ULL,
-  0x0040201008040201ULL
-};
-__constant__ ull mask2[4] = {
-  0x0101010101010100ULL,
-  0x00000000000000feULL,
-  0x0002040810204080ULL,
-  0x8040201008040200ULL
-};
-constexpr ull mask2_host[4] = {
-  0x0101010101010100ULL,
-  0x00000000000000feULL,
-  0x0002040810204080ULL,
-  0x8040201008040200ULL
-};
-
-__host__ __device__ ull flip_impl(ull player, ull opponent, int pos, int simd_index) {
-  ull om = opponent;
-  if (simd_index) om &= 0x7E7E7E7E7E7E7E7EULL;
-#ifdef __CUDA_ARCH__
-  ull mask = mask1[simd_index] >> (63 - pos);
-  ull outflank = (0x8000000000000000ULL >> __clzll(~om & mask)) & player;
-#else
-  ull mask = mask1_host[simd_index] >> (63 - pos);
-  ull outflank = (0x8000000000000000ULL >> __builtin_clzll(~om & mask)) & player;
-#endif
-  ull flipped = (-outflank << 1) & mask;
-#ifdef __CUDA_ARCH__
-  mask = mask2[simd_index] << pos;
-#else
-  mask = mask2_host[simd_index] << pos;
-#endif
-  outflank = mask & ((om | ~mask) + 1) & player;
-  flipped |= (outflank - (outflank != 0)) & mask;
-  return flipped;
-}
-
-__host__ __device__ ull flip_seq(ull player, ull opponent, int pos) {
-  return flip_impl(player, opponent, pos, 0)
-    | flip_impl(player, opponent, pos, 1)
-    | flip_impl(player, opponent, pos, 2)
-    | flip_impl(player, opponent, pos, 3);
-}
 
 class MobilityGenerator {
  public:
@@ -166,38 +114,6 @@ __device__ void pass(int stack_index, const size_t upper_stack_size) {
   node.passed_prev = true;
 }
 
-__host__ __device__ ull mobility_impl(ull player, ull opponent, int simd_index) {
-  ull PP, mOO, MM, flip_l, flip_r, pre_l, pre_r, shift2;
-  ull shift1[4] = { 1, 7, 9, 8 };
-  ull mflipH[4] = { 0x7e7e7e7e7e7e7e7eULL, 0x7e7e7e7e7e7e7e7eULL, 0x7e7e7e7e7e7e7e7eULL, 0xffffffffffffffffULL };
-
-  PP = player;
-  mOO = opponent & mflipH[simd_index];
-  flip_l  = mOO & (PP << shift1[simd_index]);       flip_r  = mOO & (PP >> shift1[simd_index]);
-  flip_l |= mOO & (flip_l << shift1[simd_index]);   flip_r |= mOO & (flip_r >> shift1[simd_index]);
-  pre_l   = mOO & (mOO << shift1[simd_index]);      pre_r   = pre_l >> shift1[simd_index];
-  shift2 = shift1[simd_index] + shift1[simd_index];
-  flip_l |= pre_l & (flip_l << shift2);             flip_r |= pre_r & (flip_r >> shift2);
-  flip_l |= pre_l & (flip_l << shift2);             flip_r |= pre_r & (flip_r >> shift2);
-  MM = flip_l << shift1[simd_index];                MM |= flip_r >> shift1[simd_index];
-  return MM & ~(player|opponent);
-}
-
-__host__ __device__ ull mobility(ull player, ull opponent) {
-  return mobility_impl(player, opponent, 0)
-    | mobility_impl(player, opponent, 1)
-    | mobility_impl(player, opponent, 2)
-    | mobility_impl(player, opponent, 3);
-}
-
-__host__ __device__ int mobility_count(ull player, ull opponent) {
-#ifdef __CUDA_ARCH__
-  return __popcll(mobility(player, opponent));
-#else
-  return __builtin_popcountll(mobility(player, opponent));
-#endif
-}
-
 class UpperNode {
  public:
   static constexpr int max_mobility_count = 46;
@@ -209,9 +125,9 @@ class UpperNode {
     while(!mg.completed()) {
       ull next_bit = mg.next_bit();
       int pos = __popcll(next_bit - 1);
-      ull flip = flip_seq(player, opponent, pos);
-      if (flip) {
-        cntary[possize] = mobility_count(opponent ^ flip, (player ^ flip) | next_bit);
+      ull flip_bits = flip(player, opponent, pos);
+      if (flip_bits) {
+        cntary[possize] = mobility_count(opponent ^ flip_bits, (player ^ flip_bits) | next_bit);
         posary[possize++] = pos;
       }
     }
@@ -331,14 +247,14 @@ __device__ bool solve_all_upper(
     if (commit_or_next(abp, result, upper_stack, count, index, stack_index, nodes_count2)) return true;
   } else {
     int pos = node.pop();
-    ull flip = flip_seq(node.player_pos(), node.opponent_pos(), pos);
-    assert(flip);
+    ull flip_bits = flip(node.player_pos(), node.opponent_pos(), pos);
+    assert(flip_bits);
     if (stack_index < upper_stack_size - 1) {
       UpperNode& next_node = upper_stack[stack_index+1];
-      next_node = node.move(flip, UINT64_C(1) << pos);
+      next_node = node.move(flip_bits, UINT64_C(1) << pos);
     } else {
       Node& next_node = get_next_node(stack_index, upper_stack_size);
-      next_node = Node(MobilityGenerator(node.opponent_pos() ^ flip, (node.player_pos() ^ flip) | (UINT64_C(1) << pos)), -node.beta, -node.alpha);
+      next_node = Node(MobilityGenerator(node.opponent_pos() ^ flip_bits, (node.player_pos() ^ flip_bits) | (UINT64_C(1) << pos)), -node.beta, -node.alpha);
     }
     ++stack_index;
   }
@@ -363,11 +279,11 @@ __device__ void solve_all_lower(UpperNode * const upper_stack, const size_t uppe
   } else {
     ull next_bit = node.mg.next_bit();
     int pos = __popcll(next_bit - 1);
-    ull flip = flip_seq(node.mg.player_pos(), node.mg.opponent_pos(), pos);
-    if (flip) { // movable
+    ull flip_bits = flip(node.mg.player_pos(), node.mg.opponent_pos(), pos);
+    if (flip_bits) { // movable
       node.not_pass = true;
       Node& next_node = get_next_node(stack_index, upper_stack_size);
-      next_node = Node(node.mg.move(flip, next_bit), -node.beta, -node.alpha);
+      next_node = Node(node.mg.move(flip_bits, next_bit), -node.beta, -node.alpha);
       ++stack_index;
     }
   }
