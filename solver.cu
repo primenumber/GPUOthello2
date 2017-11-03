@@ -1,12 +1,7 @@
-#include <cassert>
-#include <algorithm>
-#include <iostream>
-#include <string>
-#include <vector>
-#include <tuple>
+#include "solver.cuh"
+#include <cstdlib>
 #include <thrust/sort.h>
 #include <thrust/execution_policy.h>
-#include "to_board.hpp"
 
 constexpr int nodesPerBlock = 64;
 
@@ -273,12 +268,14 @@ __device__ void pass_upper(UpperNode * const upper_stack, const int stack_index)
   node = node.pass();
 }
 
-__device__ bool next_game(Node * const nodes, UpperNode * const upper_stack, const size_t count, size_t &index) {
+__device__ bool next_game(
+    const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
+    const size_t count, size_t &index) {
   UpperNode &node = upper_stack[0];
-  nodes[index] = Node(MobilityGenerator(node.player_pos(), node.opponent_pos()), node.alpha, node.beta);
+  result[index] = node.alpha;
   index += gridDim.x * blockDim.x;
   if (index < count) {
-    upper_stack[0] = UpperNode(nodes[index].mg.player_pos(), nodes[index].mg.opponent_pos(), nodes[index].alpha, nodes[index].beta);
+    upper_stack[0] = UpperNode(abp[index].player, abp[index].opponent, abp[index].alpha, abp[index].beta);
   }
   return index < count;
 }
@@ -290,9 +287,11 @@ __device__ void commit_upper(UpperNode * const upper_stack, int &stack_index) {
   stack_index--;
 }
 
-__device__ bool commit_or_next(Node * const nodes, UpperNode * const upper_stack, const size_t count, size_t &index, int &stack_index, int &nodes_count2) {
+__device__ bool commit_or_next(
+    const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
+    const size_t count, size_t &index, int &stack_index, int &nodes_count2) {
   if (stack_index == 0) {
-    if (!next_game(nodes, upper_stack, count, index))
+    if (!next_game(abp, result, upper_stack, count, index))
       return true;
     nodes_count2 = 0;
   } else {
@@ -317,7 +316,7 @@ __device__ void commit_lower(UpperNode * const upper_stack, int& stack_index, co
 }
 
 __device__ bool solve_all_upper(
-    Node * const nodes, UpperNode * const upper_stack, const size_t count, const size_t upper_stack_size,
+    const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack, const size_t count, const size_t upper_stack_size,
     size_t &index, int &stack_index, int &nodes_count2) {
   ++nodes_count2;
   UpperNode& node = upper_stack[stack_index];
@@ -325,15 +324,15 @@ __device__ bool solve_all_upper(
     if (node.size() == 0) { // pass
       if (node.passed()) {
         node.alpha = node.score();
-        if (commit_or_next(nodes, upper_stack, count, index, stack_index, nodes_count2)) return true;
+        if (commit_or_next(abp, result, upper_stack, count, index, stack_index, nodes_count2)) return true;
       } else {
         pass_upper(upper_stack, stack_index);
       }
     } else { // completed
-      if (commit_or_next(nodes, upper_stack, count, index, stack_index, nodes_count2)) return true;
+      if (commit_or_next(abp, result, upper_stack, count, index, stack_index, nodes_count2)) return true;
     }
   } else if (node.alpha >= node.beta) {
-    if (commit_or_next(nodes, upper_stack, count, index, stack_index, nodes_count2)) return true;
+    if (commit_or_next(abp, result, upper_stack, count, index, stack_index, nodes_count2)) return true;
   } else {
     int pos = node.pop();
     ull flip = flip_seq(node.player_pos(), node.opponent_pos(), pos);
@@ -378,7 +377,8 @@ __device__ void solve_all_lower(UpperNode * const upper_stack, const size_t uppe
   }
 }
 
-__device__ void solve_all(Node *nodes, UpperNode *upper_stack, const size_t count, const size_t upper_stack_size, size_t &index) {
+__device__ void solve_all(const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
+    const size_t count, const size_t upper_stack_size, size_t &index) {
   int stack_index = 0;
   int nodes_count = 0;
   int nodes_count2 = 0;
@@ -387,110 +387,50 @@ __device__ void solve_all(Node *nodes, UpperNode *upper_stack, const size_t coun
     //printf("%d %d: %d %d %d\n", threadIdx.x, blockIdx.x, stack_index, index, nodes_count);
     assert(index < count);
     if (stack_index < upper_stack_size) {
-      if (solve_all_upper(nodes, upper_stack, count, upper_stack_size, index, stack_index, nodes_count2)) return;
+      if (solve_all_upper(abp, result, upper_stack, count, upper_stack_size, index, stack_index, nodes_count2)) return;
     } else {
       solve_all_lower(upper_stack, upper_stack_size, stack_index);
     }
   }
 }
 
-__global__ void alpha_beta_kernel(Node *nodes, UpperNode *upper_stack, size_t count, size_t upper_stack_size) {
+__global__ void alpha_beta_kernel(
+    const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
+    size_t count, size_t upper_stack_size) {
   size_t index = threadIdx.x + blockIdx.x * blockDim.x;
   if (index < count) {
     UpperNode *ustack = upper_stack + index * upper_stack_size;
-    Node &node = nodes[index];
-    ustack[0] = UpperNode(node.mg.player_pos(), node.mg.opponent_pos(), node.alpha, node.beta);
-    solve_all(nodes, ustack, count, upper_stack_size, index);
+    const AlphaBetaProblem &problem = abp[index];
+    ustack[0] = UpperNode(problem.player, problem.opponent, problem.alpha, problem.beta);
+    solve_all(abp, result, ustack, count, upper_stack_size, index);
   }
 }
 
-__host__ void output_board(const ull p, const ull o) {
-  for (int i = 0; i < 8; ++i) {
-    for (int j = 0; j < 8; ++j) {
-      int index = i*8+j;
-      if ((p >> index) & 1) {
-        printf("x");
-      } else if ((o >> index) & 1) {
-        printf("o");
-      } else {
-        printf(".");
-      }
-    }
-    printf("\n");
-  }
-  printf("\n");
+void init_batch(BatchedTask &bt, size_t batch_size, size_t max_depth, size_t lower_stack_depth) {
+  constexpr int chunk_size = 2048;
+  bt.str = (cudaStream_t*)malloc(sizeof(cudaStream_t));
+  cudaStreamCreate(bt.str);
+  cudaMallocManaged((void**)&bt.abp, sizeof(AlphaBetaProblem) * batch_size);
+  cudaMallocManaged((void**)&bt.result, sizeof(int) * batch_size);
+  bt.size = batch_size;
+  bt.grid_size = (batch_size + chunk_size - 1) / chunk_size;
+  bt.max_depth = max_depth;
+  bt.lower_stack_depth = lower_stack_depth;
+  cudaMalloc((void**)&bt.upper_stacks, sizeof(UpperNode) * bt.grid_size * nodesPerBlock * (bt.max_depth - bt.lower_stack_depth));
 }
 
-__host__ int alpha_beta(Node node) {
-  int result = -64; // fail soft
-  while(!node.mg.completed()) {
-    ull bit = node.mg.next_bit();
-    int pos = __builtin_popcountll(bit-1);
-    ull flip_bits = flip_seq(node.mg.player_pos(), node.mg.opponent_pos(), pos);
-    if (flip_bits) {
-      result = std::max(result, 
-          -alpha_beta(Node(node.mg.move(flip_bits, bit), -node.beta, -node.alpha)));
-      if (result >= node.beta) return result;
-      node.alpha = max(node.alpha, result);
-      node.not_pass = true;
-    }
-  }
-  if (!node.not_pass) {
-    if (node.passed_prev) {
-      return node.mg.score();
-    } else {
-      return -alpha_beta(Node(node.mg.pass(), -node.beta, -node.alpha, true));
-    }
-  }
-  return result;
+void launch_batch(const BatchedTask &bt) {
+  alpha_beta_kernel<<<bt.grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * (bt.lower_stack_depth+1), *bt.str>>>(bt.abp, bt.result, bt.upper_stacks, bt.size, bt.max_depth - bt.lower_stack_depth);
 }
 
-int main(int argc, char **argv) {
-  if (argc < 5) {
-    fprintf(stderr, "usage: %s INPUT OUTPUT DEPTH NAIVE_DEPTH\n", argv[0]);
-    return 1;
-  }
-  FILE *fp_in = fopen(argv[1], "r");
-  FILE *fp_out = fopen(argv[2], "w");
-  int max_depth = std::stoi(argv[3]);
-  int lower_stack_depth = std::stoi(argv[4]);
-  int n;
-  fscanf(fp_in, "%d", &n);
-  std::vector<std::string> vboard(n);
-  Node *nodes;
-  for (int i = 0; i < n; ++i) {
-    char buf[17];
-    fscanf(fp_in, "%s", buf);
-    vboard[i] = buf;
-  }
-  std::sort(std::begin(vboard), std::end(vboard));
-  vboard.erase(std::unique(std::begin(vboard), std::end(vboard)), std::end(vboard));
-  n = vboard.size();
-  fprintf(stderr, "n = %d\n", n);
-  cudaMallocManaged((void**)&nodes, sizeof(Node) * n);
-  for (int i = 0; i < n; ++i) {
-    ull player, opponent;
-    std::tie(player, opponent) = toBoard(vboard[i].c_str());
-    nodes[i] = Node(MobilityGenerator(player, opponent));
-  }
-  constexpr int chunk_size = 1024;
-  UpperNode *upper_stacks;
-  size_t grid_size = (n + chunk_size - 1) / chunk_size;
-  cudaMalloc((void**)&upper_stacks, sizeof(UpperNode) * grid_size * nodesPerBlock * (max_depth - lower_stack_depth));
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-  cudaEventRecord(start, 0);
-  alpha_beta_kernel<<<grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * (lower_stack_depth+1)>>>(nodes, upper_stacks, n, max_depth - lower_stack_depth);
-  cudaEventRecord(stop, 0);
-  cudaEventSynchronize(stop);
-  float elapsed = 0;
-  cudaEventElapsedTime(&elapsed, start, stop);
-  cudaFree(upper_stacks);
-  fprintf(stderr, "%s, elapsed: %.6fs\n", cudaGetErrorString(cudaGetLastError()), elapsed/1000.0);
-  for (int i = 0; i < n; ++i) {
-    fprintf(fp_out, "%s %d\n", vboard[i].c_str(), nodes[i].alpha);
-  }
-  cudaFree(nodes);
-  return 0;
+bool is_ready_batch(const BatchedTask &bt) {
+  return cudaStreamQuery(*bt.str) == cudaSuccess;
+}
+
+void destroy_batch(const BatchedTask &bt) {
+  cudaStreamDestroy(*bt.str);
+  free(bt.str);
+  cudaFree(bt.abp);
+  cudaFree(bt.result);
+  cudaFree(bt.upper_stacks);
 }
