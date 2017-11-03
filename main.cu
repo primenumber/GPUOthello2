@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <tuple>
+#include <boost/timer/timer.hpp>
 #include "to_board.hpp"
 
 void output_board(const ull p, const ull o) {
@@ -22,6 +23,11 @@ void output_board(const ull p, const ull o) {
   }
   printf("\n");
 }
+
+struct Batch {
+  BatchedTask bt;
+  std::vector<std::string> vstr;
+};
 
 int main(int argc, char **argv) {
   if (argc < 5) {
@@ -44,25 +50,35 @@ int main(int argc, char **argv) {
   vboard.erase(std::unique(std::begin(vboard), std::end(vboard)), std::end(vboard));
   n = vboard.size();
   fprintf(stderr, "n = %d\n", n);
-  BatchedTask bt;
-  init_batch(bt, n, max_depth, lower_stack_depth);
-  for (int i = 0; i < n; ++i) {
-    ull player, opponent;
-    std::tie(player, opponent) = toBoard(vboard[i].c_str());
-    bt.abp[i] = AlphaBetaProblem(player, opponent);
+  constexpr size_t batch_size = 8192;
+  size_t batch_count = (n + batch_size - 1) / batch_size;
+  std::vector<Batch> vb(batch_count);
+  for (size_t i = 0; i < batch_count; ++i) {
+    int size = min(batch_size, n - i*batch_size);
+    init_batch(vb[i].bt, size, max_depth, lower_stack_depth);
+    for (int j = 0; j < vb[i].bt.size; ++j) {
+      ull player, opponent;
+      std::tie(player, opponent) = toBoard(vboard[i*batch_size+j].c_str());
+      vb[i].bt.abp[j] = AlphaBetaProblem(player, opponent);
+      vb[i].vstr.push_back(vboard[i*batch_size+j]);
+    }
   }
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-  cudaEventRecord(start, *bt.str);
-  launch_batch(bt);
-  cudaEventRecord(stop, *bt.str);
-  cudaEventSynchronize(stop);
-  float elapsed = 0;
-  cudaEventElapsedTime(&elapsed, start, stop);
-  fprintf(stderr, "%s, elapsed: %.6fs\n", cudaGetErrorString(cudaGetLastError()), elapsed/1000.0);
-  for (int i = 0; i < n; ++i) {
-    fprintf(fp_out, "%s %d\n", vboard[i].c_str(), bt.result[i]);
+  boost::timer::cpu_timer timer;
+  for (const auto &b : vb) {
+    launch_batch(b.bt);
   }
-  destroy_batch(bt);
+  while (true) {
+    bool finished = true;
+    for (const auto &b : vb) {
+      if (!is_ready_batch(b.bt)) finished = false;
+    }
+    if (finished) break;
+  }
+  fprintf(stderr, "%s, elapsed: %.6fs\n", cudaGetErrorString(cudaGetLastError()), timer.elapsed().wall/1000000000.0);
+  for (const auto &b : vb) {
+    for (int j = 0; j < b.bt.size; ++j) {
+      fprintf(fp_out, "%s %d\n", b.vstr[j].c_str(), b.bt.result[j]);
+    }
+    destroy_batch(b.bt);
+  }
 }

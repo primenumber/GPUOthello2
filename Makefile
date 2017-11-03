@@ -1,5 +1,5 @@
 NVCC=nvcc
-NVCCOPT=-std=c++14 --compiler-options -march=native -arch=sm_61 -m64 -O3
+NVCCOPT=-std=c++14 --compiler-options -march=native -arch=sm_61 -m64 -O3 -lboost_timer
 CXXOPT=-std=c++14 -march=native -O3
 OBJS=main.o solver.o to_board.o
 
