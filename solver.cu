@@ -59,13 +59,6 @@ __host__ __device__ ull flip_seq(ull player, ull opponent, int pos) {
     | flip_impl(player, opponent, pos, 3);
 }
 
-//__device__ ull flip_simd(ull player, ull opponent, int pos) {
-//  ull flip = flip_impl(player, opponent, pos, threadIdx.x);
-//  flip |= __shfl_xor(flip, 0x1);
-//  flip |= __shfl_xor(flip, 0x2);
-//  return flip;
-//}
-
 class MobilityGenerator {
  public:
   __device__ MobilityGenerator() {}
