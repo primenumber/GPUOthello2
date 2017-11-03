@@ -4,6 +4,7 @@
 #include <thrust/execution_policy.h>
 
 constexpr int nodesPerBlock = 64;
+constexpr int lower_stack_depth = 9;
 
 __constant__ ull mask1[4] = {
   0x0080808080808080ULL,
@@ -67,6 +68,7 @@ __host__ __device__ ull flip_seq(ull player, ull opponent, int pos) {
 
 class MobilityGenerator {
  public:
+  __device__ MobilityGenerator() {}
   __host__ __device__ MobilityGenerator(ull player, ull opponent)
     : x(~opponent), y(~player) {}
   MobilityGenerator(const MobilityGenerator &) = default;
@@ -128,6 +130,7 @@ struct Node {
   char beta;
   bool not_pass;
   bool passed_prev;
+  __device__ Node() {}
   __host__ __device__ Node(const MobilityGenerator &mg, int alpha, int beta, bool passed_prev = false)
     : mg(mg), alpha(alpha), beta(beta), not_pass(false), passed_prev(passed_prev) {}
   __host__ __device__ Node(const MobilityGenerator &mg)
@@ -136,7 +139,7 @@ struct Node {
   Node& operator=(const Node &) = default;
 };
 
-extern __shared__ Node nodes_stack[];
+__shared__ Node nodes_stack[nodesPerBlock * (lower_stack_depth + 1)];
 
 __device__ Node& get_node(int stack_index, size_t upper_stack_size) {
   return nodes_stack[threadIdx.x + (stack_index - upper_stack_size) * blockDim.x];
@@ -406,7 +409,7 @@ __global__ void alpha_beta_kernel(
   }
 }
 
-void init_batch(BatchedTask &bt, size_t batch_size, size_t max_depth, size_t lower_stack_depth) {
+void init_batch(BatchedTask &bt, size_t batch_size, size_t max_depth) {
   constexpr int chunk_size = 2048;
   bt.str = (cudaStream_t*)malloc(sizeof(cudaStream_t));
   cudaStreamCreate(bt.str);
@@ -415,12 +418,11 @@ void init_batch(BatchedTask &bt, size_t batch_size, size_t max_depth, size_t low
   bt.size = batch_size;
   bt.grid_size = (batch_size + chunk_size - 1) / chunk_size;
   bt.max_depth = max_depth;
-  bt.lower_stack_depth = lower_stack_depth;
-  cudaMalloc((void**)&bt.upper_stacks, sizeof(UpperNode) * bt.grid_size * nodesPerBlock * (bt.max_depth - bt.lower_stack_depth));
+  cudaMalloc((void**)&bt.upper_stacks, sizeof(UpperNode) * bt.grid_size * nodesPerBlock * (bt.max_depth - lower_stack_depth));
 }
 
 void launch_batch(const BatchedTask &bt) {
-  alpha_beta_kernel<<<bt.grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * (bt.lower_stack_depth+1), *bt.str>>>(bt.abp, bt.result, bt.upper_stacks, bt.size, bt.max_depth - bt.lower_stack_depth);
+  alpha_beta_kernel<<<bt.grid_size, nodesPerBlock, 0, *bt.str>>>(bt.abp, bt.result, bt.upper_stacks, bt.size, bt.max_depth - lower_stack_depth);
 }
 
 bool is_ready_batch(const BatchedTask &bt) {

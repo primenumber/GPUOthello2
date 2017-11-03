@@ -30,14 +30,13 @@ struct Batch {
 };
 
 int main(int argc, char **argv) {
-  if (argc < 5) {
-    fprintf(stderr, "usage: %s INPUT OUTPUT DEPTH NAIVE_DEPTH\n", argv[0]);
+  if (argc < 4) {
+    fprintf(stderr, "usage: %s INPUT OUTPUT DEPTH\n", argv[0]);
     return 1;
   }
   FILE *fp_in = fopen(argv[1], "r");
   FILE *fp_out = fopen(argv[2], "w");
   int max_depth = std::stoi(argv[3]);
-  int lower_stack_depth = std::stoi(argv[4]);
   int n;
   fscanf(fp_in, "%d", &n);
   std::vector<std::string> vboard(n);
@@ -55,7 +54,7 @@ int main(int argc, char **argv) {
   std::vector<Batch> vb(batch_count);
   for (size_t i = 0; i < batch_count; ++i) {
     int size = min(batch_size, n - i*batch_size);
-    init_batch(vb[i].bt, size, max_depth, lower_stack_depth);
+    init_batch(vb[i].bt, size, max_depth);
     for (int j = 0; j < vb[i].bt.size; ++j) {
       ull player, opponent;
       std::tie(player, opponent) = toBoard(vboard[i*batch_size+j].c_str());
