@@ -45,16 +45,7 @@ class MobilityGenerator {
     return MobilityGenerator(o , p);
   }
   __host__ __device__ int score() const {
-#ifdef __CUDA_ARCH__
-    int pcnt = __popcll(player_pos());
-    int ocnt = __popcll(opponent_pos());
-#else
-    int pcnt = __builtin_popcountll(player_pos());
-    int ocnt = __builtin_popcountll(opponent_pos());
-#endif
-    if (pcnt == ocnt) return 0;
-    if (pcnt > ocnt) return 64 - 2*ocnt;
-    return 2*pcnt - 64;
+    return final_score(player_pos(), opponent_pos());
   }
  private:
   __host__ __device__ ull not_checked_yet() const {
@@ -155,11 +146,7 @@ class UpperNode {
     return prev_passed;
   }
   __device__ int score() const {
-    int pcnt = __popcll(player);
-    int ocnt = __popcll(opponent);
-    if (pcnt == ocnt) return 0;
-    if (pcnt > ocnt) return 64 - 2*ocnt;
-    return 2*pcnt - 64;
+    return final_score(player, opponent);
   }
   __device__ UpperNode move(ull bits, ull pos_bit) const {
     return UpperNode(opponent ^ bits, (player ^ bits) | pos_bit, -beta, -alpha);

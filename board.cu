@@ -84,3 +84,16 @@ __host__ __device__ int mobility_count(ull player, ull opponent) {
   return __builtin_popcountll(mobility(player, opponent));
 #endif
 }
+
+__host__ __device__ int final_score(ull player, ull opponent) {
+#ifdef __CUDA_ARCH__
+  int pcnt = __popcll(player);
+  int ocnt = __popcll(opponent);
+#else
+  int pcnt = __builtin_popcountll(player);
+  int ocnt = __builtin_popcountll(opponent);
+#endif
+  if (pcnt == ocnt) return 0;
+  if (pcnt > ocnt) return 64 - 2*ocnt;
+  return 2*pcnt - 64;
+}
