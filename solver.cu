@@ -4,8 +4,10 @@
 #include <thrust/execution_policy.h>
 #include "board.cuh"
 
+// parameters
 constexpr int nodesPerBlock = 64;
 constexpr int lower_stack_depth = 9;
+constexpr int chunk_size = 2048;
 
 class MobilityGenerator {
  public:
@@ -319,7 +321,6 @@ __global__ void alpha_beta_kernel(
 }
 
 void init_batch(BatchedTask &bt, size_t batch_size, size_t max_depth) {
-  constexpr int chunk_size = 2048;
   bt.str = (cudaStream_t*)malloc(sizeof(cudaStream_t));
   cudaStreamCreate(bt.str);
   cudaMallocManaged((void**)&bt.abp, sizeof(AlphaBetaProblem) * batch_size);
