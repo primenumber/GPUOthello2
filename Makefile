@@ -26,5 +26,5 @@ clean:
 
 solver.o: to_board.hpp solver.cuh types.hpp board.cuh
 to_board.o: to_board.hpp types.hpp
-main.o: solver.cuh types.hpp
+main.o: solver.cuh types.hpp task.cuh
 board.o: board.cuh

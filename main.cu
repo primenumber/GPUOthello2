@@ -1,11 +1,16 @@
 #include "solver.cuh"
 #include <algorithm>
 #include <iostream>
+#include <list>
+#include <queue>
 #include <string>
 #include <vector>
 #include <tuple>
 #include <boost/timer/timer.hpp>
 #include "to_board.hpp"
+#include "task.cuh"
+
+constexpr size_t batch_size = 8192;
 
 void output_board(const ull p, const ull o) {
   for (int i = 0; i < 8; ++i) {
@@ -26,7 +31,7 @@ void output_board(const ull p, const ull o) {
 
 struct Batch {
   BatchedTask bt;
-  std::vector<std::string> vstr;
+  std::vector<size_t> id;
 };
 
 int main(int argc, char **argv) {
@@ -49,35 +54,61 @@ int main(int argc, char **argv) {
   vboard.erase(std::unique(std::begin(vboard), std::end(vboard)), std::end(vboard));
   n = vboard.size();
   fprintf(stderr, "n = %d\n", n);
-  constexpr size_t batch_size = 8192;
-  size_t batch_count = (n + batch_size - 1) / batch_size;
-  std::vector<Batch> vb(batch_count);
-  for (size_t i = 0; i < batch_count; ++i) {
-    int size = min(batch_size, n - i*batch_size);
-    init_batch(vb[i].bt, size, max_depth);
-    for (int j = 0; j < vb[i].bt.size; ++j) {
-      ull player, opponent;
-      std::tie(player, opponent) = toBoard(vboard[i*batch_size+j].c_str());
-      vb[i].bt.abp[j] = AlphaBetaProblem(player, opponent);
-      vb[i].vstr.push_back(vboard[i*batch_size+j]);
-    }
+  std::list<Batch> batches;
+  std::queue<size_t> cpu_queue, gpu_queue;
+  std::vector<CPUStack> stacks;
+  Table table;
+  for (size_t i = 0; i < n; ++i) {
+    cpu_queue.push(i);
+    ull player, opponent;
+    std::tie(player, opponent) = toBoard(vboard[i].c_str());
+    stacks.emplace_back(CPUNode(player, opponent), table);
   }
-  boost::timer::cpu_timer timer;
-  for (const auto &b : vb) {
-    launch_batch(b.bt);
-  }
+  int cnt = 0;
   while (true) {
     bool finished = true;
-    for (const auto &b : vb) {
-      if (!is_ready_batch(b.bt)) finished = false;
+    for (auto itr = std::begin(batches); itr != std::end(batches); ) {
+      finished = false;
+      if (is_ready_batch(itr->bt)) {
+        fprintf(stderr, "ok %d %d\n", cnt++, itr->bt.size);
+        for (size_t i = 0; i < itr->bt.size; ++i) {
+          stacks[itr->id[i]].update(itr->bt.result[i]);
+          cpu_queue.push(itr->id[i]);
+        }
+        destroy_batch(itr->bt);
+        itr = batches.erase(itr);
+      } else {
+        ++itr;
+      }
+    }
+    while (!cpu_queue.empty()) {
+      finished = false;
+      size_t id = cpu_queue.front();
+      cpu_queue.pop();
+      if (stacks[id].run()) continue;
+      gpu_queue.push(id);
+    }
+    while (!gpu_queue.empty()) {
+      finished = false;
+      size_t size = std::min(batch_size, gpu_queue.size());
+      batches.emplace_back();
+      init_batch(batches.back().bt, size, gpu_depth);
+      for (size_t i = 0; i < size; ++i) {
+        size_t id = gpu_queue.front();
+        gpu_queue.pop();
+        CPUNode &top = stacks[id].get_top();
+        if (i == 0) {
+          fprintf(stderr, "%d %d\n", top.get_alpha(), top.get_beta());
+        }
+        batches.back().bt.abp[i] = AlphaBetaProblem(top.player_pos(), top.opponent_pos(), top.get_alpha(), top.get_beta());
+        batches.back().id.push_back(id);
+      }
+      launch_batch(batches.back().bt);
     }
     if (finished) break;
   }
-  fprintf(stderr, "%s, elapsed: %.6fs\n", cudaGetErrorString(cudaGetLastError()), timer.elapsed().wall/1000000000.0);
-  for (const auto &b : vb) {
-    for (int j = 0; j < b.bt.size; ++j) {
-      fprintf(fp_out, "%s %d\n", b.vstr[j].c_str(), b.bt.result[j]);
-    }
-    destroy_batch(b.bt);
+  for (size_t i = 0; i < n; ++i) {
+    fprintf(fp_out, "%s %d\n", vboard[i].c_str(), stacks[i].get_top().get_result());
   }
+  return 0;
 }
