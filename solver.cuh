@@ -28,7 +28,7 @@ struct Entry {
 class Table {
  public:
   __device__ Entry find(ull player, ull opponent) const {
-    atomicAdd(blow, 1);
+    atomicAdd(lookup_count, 1);
     ull hash = (player + 17 * opponent) % size;
     Entry result;
     for (int i = 0; i < 32; ++i) {
@@ -38,7 +38,7 @@ class Table {
         if (result.player != player || result.opponent != opponent) {
           result.enable = false;
         } else {
-          atomicAdd(hit, 1);
+          atomicAdd(hit_count, 1);
         }
         unlock(hash);
       }
@@ -46,7 +46,7 @@ class Table {
     return result;
   }
   __device__ void update(ull player, ull opponent, char upper, char lower, char value) const {
-    atomicAdd(count, 1);
+    atomicAdd(update_count, 1);
     Entry entry;
     if (value > lower && value < upper) {
       entry = Entry(player, opponent, value, value);
@@ -65,7 +65,6 @@ class Table {
         if (tmp.player != player || tmp.opponent != opponent || !tmp.enable) {
           entries[hash] = entry;
         } else {
-          atomicAdd(hit, 1);
           entries[hash].upper = min(tmp.upper, entry.upper);
           entries[hash].lower = max(tmp.lower, entry.lower);
         }
@@ -76,9 +75,9 @@ class Table {
   Entry * entries;
   mutable int *mutex;
   size_t size;
-  ull *count;
-  ull *hit;
-  ull *blow;
+  ull *update_count;
+  ull *hit_count;
+  ull *lookup_count;
  private:
   __device__ bool try_lock(ull index) const {
     bool result = atomicCAS(mutex + index, 0, 1) == 0;

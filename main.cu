@@ -56,13 +56,13 @@ int main(int argc, char **argv) {
   constexpr size_t table_size = 128000001;
   cudaMallocManaged((void**)&table.entries, sizeof(Entry) * table_size);
   cudaMallocManaged((void**)&table.mutex, sizeof(int) * table_size);
-  cudaMallocManaged((void**)&table.count, sizeof(ull));
-  cudaMallocManaged((void**)&table.hit, sizeof(ull));
-  cudaMallocManaged((void**)&table.blow, sizeof(ull));
+  cudaMallocManaged((void**)&table.update_count, sizeof(ull));
+  cudaMallocManaged((void**)&table.hit_count, sizeof(ull));
+  cudaMallocManaged((void**)&table.lookup_count, sizeof(ull));
   table.size = table_size;
-  *table.count = 0;
-  *table.hit = 0;
-  *table.blow = 0;
+  *table.update_count = 0;
+  *table.hit_count = 0;
+  *table.lookup_count = 0;
   memset(table.entries, 0, sizeof(Entry) * table_size);
   memset(table.mutex, 0, sizeof(int) * table_size);
   for (size_t i = 0; i < batch_count; ++i) {
@@ -87,7 +87,8 @@ int main(int argc, char **argv) {
     if (finished) break;
   }
   fprintf(stderr, "%s, elapsed: %.6fs, table update count: %llu, table hit: %llu, table find: %llu\n",
-      cudaGetErrorString(cudaGetLastError()), timer.elapsed().wall/1000000000.0, *table.count, *table.hit, *table.blow);
+      cudaGetErrorString(cudaGetLastError()), timer.elapsed().wall/1000000000.0,
+      *table.update_count, *table.hit_count, *table.lookup_count);
   for (const auto &b : vb) {
     for (int j = 0; j < b.bt.size; ++j) {
       fprintf(fp_out, "%s %d\n", b.vstr[j].c_str(), b.bt.result[j]);
@@ -96,7 +97,7 @@ int main(int argc, char **argv) {
   }
   cudaFree(table.entries);
   cudaFree(table.mutex);
-  cudaFree(table.count);
-  cudaFree(table.hit);
-  cudaFree(table.blow);
+  cudaFree(table.update_count);
+  cudaFree(table.hit_count);
+  cudaFree(table.lookup_count);
 }
