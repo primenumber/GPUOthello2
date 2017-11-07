@@ -185,12 +185,14 @@ __device__ void pass_upper(UpperNode * const upper_stack, const int stack_index,
   node = node.pass(table);
 }
 
+__shared__ unsigned int index_shared;
+
 __device__ bool next_game(
     const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
     const size_t count, size_t &index) {
   UpperNode &node = upper_stack[0];
   result[index] = node.alpha;
-  index += gridDim.x * blockDim.x;
+  index = atomicAdd(&index_shared, gridDim.x);
   if (index < count) {
     upper_stack[0] = UpperNode(abp[index].player, abp[index].opponent, abp[index].alpha, abp[index].beta);
   }
@@ -315,7 +317,9 @@ __device__ void solve_all(const AlphaBetaProblem * const abp, int * const result
 __global__ void alpha_beta_kernel(
     const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
     size_t count, size_t upper_stack_size, Table table) {
-  size_t index = threadIdx.x + blockIdx.x * blockDim.x;
+  index_shared = blockIdx.x;
+  __syncthreads();
+  size_t index = atomicAdd(&index_shared, gridDim.x);
   if (index < count) {
     UpperNode *ustack = upper_stack + index * upper_stack_size;
     const AlphaBetaProblem &problem = abp[index];
