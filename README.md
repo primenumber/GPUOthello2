@@ -18,10 +18,10 @@ $ head problem
 !!&zO{xRxQ{X{[o[
 !!(RzOqQQRQQwNNN
 $ ./solver
-usage: ./solver INPUT OUTPUT DEPTH NAIVE_DEPTH
-$ ./solver probrem result 10 9
+usage: ./solver INPUT OUTPUT DEPTH
+$ ./solver probrem result 10
 n = 1091780
-no error, elapsed: 6.443986s
+no error, elapsed: 4.623645s, table update count: 0, table hit: 0, table find: 0
 ```
 
 ### INPUT
@@ -48,11 +48,6 @@ Output file path
 ### DEPTH
 
 Maximum search depth (without pass), equal to maximum number of empty position
-
-### NAIVE\_DEPTH
-
-Depth of naive search
-Recommended: min(9, DEPTH-1)
 
 ## LICENSE
 
