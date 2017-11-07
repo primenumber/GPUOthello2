@@ -209,11 +209,10 @@ __device__ void commit_upper(UpperNode * const upper_stack, int &stack_index, Ta
 
 __device__ bool commit_or_next(
     const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
-    const size_t count, size_t &index, int &stack_index, int &nodes_count2, Table table) {
+    const size_t count, size_t &index, int &stack_index, Table table) {
   if (stack_index == 0) {
     if (!next_game(abp, result, upper_stack, count, index))
       return true;
-    nodes_count2 = 0;
   } else {
     commit_upper(upper_stack, stack_index, table);
   }
@@ -237,22 +236,21 @@ __device__ void commit_lower(UpperNode * const upper_stack, int& stack_index, co
 
 __device__ bool solve_all_upper(
     const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack, const size_t count, const size_t upper_stack_size,
-    size_t &index, int &stack_index, int &nodes_count2, Table table) {
-  ++nodes_count2;
+    size_t &index, int &stack_index, Table table) {
   UpperNode& node = upper_stack[stack_index];
   if (node.completed()) {
     if (node.size() == 0) { // pass
       if (node.passed()) {
         node.alpha = node.score();
-        if (commit_or_next(abp, result, upper_stack, count, index, stack_index, nodes_count2, table)) return true;
+        if (commit_or_next(abp, result, upper_stack, count, index, stack_index, table)) return true;
       } else {
         pass_upper(upper_stack, stack_index, table);
       }
     } else { // completed
-      if (commit_or_next(abp, result, upper_stack, count, index, stack_index, nodes_count2, table)) return true;
+      if (commit_or_next(abp, result, upper_stack, count, index, stack_index, table)) return true;
     }
   } else if (node.alpha >= node.beta) {
-    if (commit_or_next(abp, result, upper_stack, count, index, stack_index, nodes_count2, table)) return true;
+    if (commit_or_next(abp, result, upper_stack, count, index, stack_index, table)) return true;
   } else {
     int pos = node.pop();
     ull flip_bits = flip(node.player_pos(), node.opponent_pos(), pos);
@@ -300,14 +298,10 @@ __device__ void solve_all_lower(UpperNode * const upper_stack, const size_t uppe
 __device__ void solve_all(const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
     const size_t count, const size_t upper_stack_size, size_t &index, Table table) {
   int stack_index = 0;
-  int nodes_count = 0;
-  int nodes_count2 = 0;
   while (true) {
-    ++nodes_count;
-    //printf("%d %d: %d %d %d\n", threadIdx.x, blockIdx.x, stack_index, index, nodes_count);
     assert(index < count);
     if (stack_index < upper_stack_size) {
-      if (solve_all_upper(abp, result, upper_stack, count, upper_stack_size, index, stack_index, nodes_count2, table)) return;
+      if (solve_all_upper(abp, result, upper_stack, count, upper_stack_size, index, stack_index, table)) return;
     } else {
       solve_all_lower(upper_stack, upper_stack_size, stack_index);
     }
