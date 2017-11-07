@@ -6,7 +6,7 @@ GPU Accelerated endgame solver for Othello
 ## Usage
 
 ```
-$ head probrem
+$ head problem
 1091780
 !!%[nNNNNNnNNNNN
 !!%zN{Nrn{w{Z{{{
