@@ -104,6 +104,7 @@ struct BatchedTask {
   size_t max_depth;
   size_t size;
   size_t grid_size;
+  ull *total;
 };
 
 void init_batch(BatchedTask &bt, size_t batch_size, size_t max_depth, const Table &table);

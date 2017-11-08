@@ -295,13 +295,15 @@ __device__ void solve_all_lower(UpperNode * const upper_stack, const size_t uppe
   }
 }
 
-__device__ void solve_all(const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
+__device__ int solve_all(const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
     const size_t count, const size_t upper_stack_size, size_t &index, Table table) {
   int stack_index = 0;
+  ull nodes_count = 0;
   while (true) {
+    ++nodes_count;
     assert(index < count);
     if (stack_index < upper_stack_size) {
-      if (solve_all_upper(abp, result, upper_stack, count, upper_stack_size, index, stack_index, table)) return;
+      if (solve_all_upper(abp, result, upper_stack, count, upper_stack_size, index, stack_index, table)) return nodes_count;
     } else {
       solve_all_lower(upper_stack, upper_stack_size, stack_index);
     }
@@ -310,7 +312,7 @@ __device__ void solve_all(const AlphaBetaProblem * const abp, int * const result
 
 __global__ void alpha_beta_kernel(
     const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
-    size_t count, size_t upper_stack_size, Table table) {
+    size_t count, size_t upper_stack_size, Table table, ull * const nodes_total) {
   index_shared = blockIdx.x;
   __syncthreads();
   size_t index = atomicAdd(&index_shared, gridDim.x);
@@ -318,7 +320,8 @@ __global__ void alpha_beta_kernel(
     UpperNode *ustack = upper_stack + index * upper_stack_size;
     const AlphaBetaProblem &problem = abp[index];
     ustack[0] = UpperNode(problem.player, problem.opponent, problem.alpha, problem.beta);
-    solve_all(abp, result, ustack, count, upper_stack_size, index, table);
+    ull nodes_count = solve_all(abp, result, ustack, count, upper_stack_size, index, table);
+    atomicAdd(nodes_total, nodes_count);
   }
 }
 
@@ -327,6 +330,8 @@ void init_batch(BatchedTask &bt, size_t batch_size, size_t max_depth, const Tabl
   cudaStreamCreate(bt.str);
   cudaMallocManaged((void**)&bt.abp, sizeof(AlphaBetaProblem) * batch_size);
   cudaMallocManaged((void**)&bt.result, sizeof(int) * batch_size);
+  cudaMallocManaged((void**)&bt.total, sizeof(ull));
+  *bt.total = 0;
   bt.table = table;
   bt.size = batch_size;
   bt.grid_size = (batch_size + chunk_size - 1) / chunk_size;
@@ -335,7 +340,7 @@ void init_batch(BatchedTask &bt, size_t batch_size, size_t max_depth, const Tabl
 }
 
 void launch_batch(const BatchedTask &bt) {
-  alpha_beta_kernel<<<bt.grid_size, nodesPerBlock, 0, *bt.str>>>(bt.abp, bt.result, bt.upper_stacks, bt.size, bt.max_depth - lower_stack_depth, bt.table);
+  alpha_beta_kernel<<<bt.grid_size, nodesPerBlock, 0, *bt.str>>>(bt.abp, bt.result, bt.upper_stacks, bt.size, bt.max_depth - lower_stack_depth, bt.table, bt.total);
 }
 
 bool is_ready_batch(const BatchedTask &bt) {
@@ -348,4 +353,5 @@ void destroy_batch(const BatchedTask &bt) {
   cudaFree(bt.abp);
   cudaFree(bt.result);
   cudaFree(bt.upper_stacks);
+  cudaFree(bt.total);
 }

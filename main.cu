@@ -89,12 +89,15 @@ int main(int argc, char **argv) {
   fprintf(stderr, "%s, elapsed: %.6fs, table update count: %llu, table hit: %llu, table find: %llu\n",
       cudaGetErrorString(cudaGetLastError()), timer.elapsed().wall/1000000000.0,
       *table.update_count, *table.hit_count, *table.lookup_count);
+  ull total = 0;
   for (const auto &b : vb) {
+    total += *b.bt.total;
     for (int j = 0; j < b.bt.size; ++j) {
       fprintf(fp_out, "%s %d\n", b.vstr[j].c_str(), b.bt.result[j]);
     }
     destroy_batch(b.bt);
   }
+  fprintf(stderr, "total nodes: %llu\n", total);
   cudaFree(table.entries);
   cudaFree(table.mutex);
   cudaFree(table.update_count);
