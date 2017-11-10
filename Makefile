@@ -24,7 +24,7 @@ clean:
 	-rm *.o
 	-rm solver 
 
-solver.o: to_board.hpp solver.cuh types.hpp board.cuh
+solver.o: to_board.hpp solver.cuh types.hpp board.cuh table.cuh
 to_board.o: to_board.hpp types.hpp
-main.o: solver.cuh types.hpp
+main.o: solver.cuh types.hpp table.cuh
 board.o: board.cuh
