@@ -5,9 +5,7 @@
 #include "board.cuh"
 
 // parameters
-constexpr int nodesPerBlock = 64;
 constexpr int lower_stack_depth = 9;
-constexpr int chunk_size = 2048;
 
 class MobilityGenerator {
  public:
@@ -73,23 +71,51 @@ struct Node {
   Node& operator=(const Node &) = default;
 };
 
-__shared__ Node nodes_stack[nodesPerBlock * (lower_stack_depth + 1)];
+extern __shared__ Node nodes_stack[];
 
-__device__ Node& get_node(int stack_index, size_t upper_stack_size) {
+struct UpperNode;
+
+struct Solver {
+  int stack_index;
+  UpperNode * const upper_stack;
+  const size_t upper_stack_size;
+  const AlphaBetaProblem * const abp;
+  int *result;
+  size_t count;
+  size_t index;
+  Table table;
+
+  __device__ Node& get_node();
+  __device__ Node& get_next_node();
+  __device__ Node& get_parent_node();
+  __device__ void commit_lower_impl();
+  __device__ void pass();
+  __device__ void pass_upper();
+  __device__ bool next_game();
+  __device__ void commit_upper();
+  __device__ bool commit_or_next();
+  __device__ void commit_to_upper();
+  __device__ void commit_lower();
+  __device__ bool solve_all_upper();
+  __device__ void solve_all_lower();
+  __device__ int solve_all();
+};
+
+__device__ Node& Solver::get_node() {
   return nodes_stack[threadIdx.x + (stack_index - upper_stack_size) * blockDim.x];
 }
 
-__device__ Node& get_next_node(int stack_index, size_t upper_stack_size) {
+__device__ Node& Solver::get_next_node() {
   return nodes_stack[threadIdx.x + (stack_index - upper_stack_size + 1) * blockDim.x];
 }
 
-__device__ Node& get_parent_node(int stack_index, size_t upper_stack_size) {
+__device__ Node& Solver::get_parent_node() {
   return nodes_stack[threadIdx.x + (stack_index - upper_stack_size - 1) * blockDim.x];
 }
 
-__device__ void commit_lower_impl(int& stack_index, const size_t upper_stack_size) {
-  Node& node = get_node(stack_index, upper_stack_size);
-  Node& parent = get_parent_node(stack_index, upper_stack_size);
+__device__ void Solver::commit_lower_impl() {
+  Node& node = get_node();
+  Node& parent = get_parent_node();
   if (node.passed_prev) {
     parent.alpha = max(node.alpha, parent.alpha);
   } else {
@@ -98,8 +124,8 @@ __device__ void commit_lower_impl(int& stack_index, const size_t upper_stack_siz
   --stack_index;
 }
 
-__device__ void pass(int stack_index, const size_t upper_stack_size) {
-  Node& node = get_node(stack_index, upper_stack_size);
+__device__ void Solver::pass() {
+  Node& node = get_node();
   node.mg = node.mg.pass();
   int tmp = node.alpha;
   node.alpha = -node.beta;
@@ -180,16 +206,14 @@ class UpperNode {
   bool prev_passed;
 };
 
-__device__ void pass_upper(UpperNode * const upper_stack, const int stack_index, Table table) {
+__device__ void Solver::pass_upper() {
   UpperNode& node = upper_stack[stack_index];
   node = node.pass(table);
 }
 
 __shared__ unsigned int index_shared;
 
-__device__ bool next_game(
-    const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
-    const size_t count, size_t &index) {
+__device__ bool Solver::next_game() {
   UpperNode &node = upper_stack[0];
   result[index] = node.alpha;
   index = atomicAdd(&index_shared, gridDim.x);
@@ -199,7 +223,7 @@ __device__ bool next_game(
   return index < count;
 }
 
-__device__ void commit_upper(UpperNode * const upper_stack, int &stack_index, Table table) {
+__device__ void Solver::commit_upper() {
   UpperNode &parent = upper_stack[stack_index-1];
   UpperNode &node = upper_stack[stack_index];
   table.update(node.player_pos(), node.opponent_pos(), -parent.beta, -parent.alpha, node.alpha);
@@ -207,50 +231,46 @@ __device__ void commit_upper(UpperNode * const upper_stack, int &stack_index, Ta
   stack_index--;
 }
 
-__device__ bool commit_or_next(
-    const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
-    const size_t count, size_t &index, int &stack_index, Table table) {
+__device__ bool Solver::commit_or_next() {
   if (stack_index == 0) {
-    if (!next_game(abp, result, upper_stack, count, index))
+    if (!next_game())
       return true;
   } else {
-    commit_upper(upper_stack, stack_index, table);
+    commit_upper();
   }
   return false;
 }
 
-__device__ void commit_to_upper(UpperNode * const upper_stack, int &stack_index, const size_t upper_stack_size) {
+__device__ void Solver::commit_to_upper() {
   UpperNode &parent = upper_stack[stack_index-1];
-  Node &node = get_node(stack_index, upper_stack_size);
+  Node &node = get_node();
   parent.alpha = max(parent.alpha, node.passed_prev ? node.alpha : -node.alpha);
   --stack_index;
 }
 
-__device__ void commit_lower(UpperNode * const upper_stack, int& stack_index, const size_t upper_stack_size) {
+__device__ void Solver::commit_lower() {
   if (stack_index == upper_stack_size) {
-    commit_to_upper(upper_stack, stack_index, upper_stack_size);
+    commit_to_upper();
   } else {
-    commit_lower_impl(stack_index, upper_stack_size);
+    commit_lower_impl();
   }
 }
 
-__device__ bool solve_all_upper(
-    const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack, const size_t count, const size_t upper_stack_size,
-    size_t &index, int &stack_index, Table table) {
+__device__ bool Solver::solve_all_upper() {
   UpperNode& node = upper_stack[stack_index];
   if (node.completed()) {
     if (node.size() == 0) { // pass
       if (node.passed()) {
         node.alpha = node.score();
-        if (commit_or_next(abp, result, upper_stack, count, index, stack_index, table)) return true;
+        if (commit_or_next()) return true;
       } else {
-        pass_upper(upper_stack, stack_index, table);
+        pass_upper();
       }
     } else { // completed
-      if (commit_or_next(abp, result, upper_stack, count, index, stack_index, table)) return true;
+      if (commit_or_next()) return true;
     }
   } else if (node.alpha >= node.beta) {
-    if (commit_or_next(abp, result, upper_stack, count, index, stack_index, table)) return true;
+    if (commit_or_next()) return true;
   } else {
     int pos = node.pop();
     ull flip_bits = flip(node.player_pos(), node.opponent_pos(), pos);
@@ -259,7 +279,7 @@ __device__ bool solve_all_upper(
       UpperNode& next_node = upper_stack[stack_index+1];
       next_node = node.move(flip_bits, UINT64_C(1) << pos, table);
     } else {
-      Node& next_node = get_next_node(stack_index, upper_stack_size);
+      Node& next_node = get_next_node();
       next_node = Node(MobilityGenerator(node.opponent_pos() ^ flip_bits, (node.player_pos() ^ flip_bits) | (UINT64_C(1) << pos)), -node.beta, -node.alpha);
     }
     ++stack_index;
@@ -267,45 +287,43 @@ __device__ bool solve_all_upper(
   return false;
 }
 
-__device__ void solve_all_lower(UpperNode * const upper_stack, const size_t upper_stack_size, int &stack_index) {
-  Node& node = get_node(stack_index, upper_stack_size);
+__device__ void Solver::solve_all_lower() {
+  Node& node = get_node();
   if (node.mg.completed()) {
     if (node.not_pass) {
-      commit_lower(upper_stack, stack_index, upper_stack_size);
+      commit_lower();
     } else { // pass
       if (node.passed_prev) { // end game
         node.alpha = node.mg.score();
-        commit_lower(upper_stack, stack_index, upper_stack_size);
+        commit_lower();
       } else { // pass
-        pass(stack_index, upper_stack_size);
+        pass();
       }
     }
   } else if (node.alpha >= node.beta) { // beta cut
-    commit_lower(upper_stack, stack_index, upper_stack_size);
+    commit_lower();
   } else {
     ull next_bit = node.mg.next_bit();
     int pos = __popcll(next_bit - 1);
     ull flip_bits = flip(node.mg.player_pos(), node.mg.opponent_pos(), pos);
     if (flip_bits) { // movable
       node.not_pass = true;
-      Node& next_node = get_next_node(stack_index, upper_stack_size);
+      Node& next_node = get_next_node();
       next_node = Node(node.mg.move(flip_bits, next_bit), -node.beta, -node.alpha);
       ++stack_index;
     }
   }
 }
 
-__device__ int solve_all(const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
-    const size_t count, const size_t upper_stack_size, size_t &index, Table table) {
-  int stack_index = 0;
+__device__ int Solver::solve_all() {
   ull nodes_count = 0;
   while (true) {
     ++nodes_count;
     assert(index < count);
     if (stack_index < upper_stack_size) {
-      if (solve_all_upper(abp, result, upper_stack, count, upper_stack_size, index, stack_index, table)) return nodes_count;
+      if (solve_all_upper()) return nodes_count;
     } else {
-      solve_all_lower(upper_stack, upper_stack_size, stack_index);
+      solve_all_lower();
     }
   }
 }
@@ -319,8 +337,144 @@ __global__ void alpha_beta_kernel(
   if (index < count) {
     UpperNode *ustack = upper_stack + index * upper_stack_size;
     const AlphaBetaProblem &problem = abp[index];
-    ustack[0] = UpperNode(problem.player, problem.opponent, problem.alpha, problem.beta);
-    ull nodes_count = solve_all(abp, result, ustack, count, upper_stack_size, index, table);
+    Solver solver = {
+      0, // stack_index
+      ustack, // upper_stack
+      upper_stack_size, // upper_stack_size
+      abp, // abp
+      result, // result
+      count, // count
+      index, // index
+      table // table
+    };
+    solver.upper_stack[0] = UpperNode(problem.player, problem.opponent, problem.alpha, problem.beta);
+    ull nodes_count = solver.solve_all();
+    atomicAdd(nodes_total, nodes_count);
+  }
+}
+
+struct Thinker {
+  int stack_index;
+  ull leaf_me, leaf_op;
+  UpperNode * const stack;
+  const size_t stack_size;
+  const AlphaBetaProblem * const abp;
+  int *result;
+  size_t count;
+  size_t index;
+  Table table;
+  Evaluator evaluator;
+
+  __device__ void pass();
+  __device__ bool next_game();
+  __device__ void commit();
+  __device__ bool commit_or_next();
+  __device__ void commit_from_leaf(int);
+  __device__ int think();
+};
+
+__device__ void Thinker::pass() {
+  UpperNode& node = stack[stack_index];
+  node = node.pass(table);
+}
+
+__device__ bool Thinker::next_game() {
+  UpperNode &node = stack[0];
+  result[index] = node.alpha;
+  index = atomicAdd(&index_shared, gridDim.x);
+  if (index < count) {
+    stack[0] = UpperNode(abp[index].player, abp[index].opponent, abp[index].alpha, abp[index].beta);
+  }
+  return index < count;
+}
+
+__device__ void Thinker::commit() {
+  UpperNode &parent = stack[stack_index-1];
+  UpperNode &node = stack[stack_index];
+  table.update(node.player_pos(), node.opponent_pos(), -parent.beta, -parent.alpha, node.alpha);
+  parent.alpha = max(parent.alpha, node.passed() ? node.alpha : -node.alpha);
+  stack_index--;
+}
+
+__device__ bool Thinker::commit_or_next() {
+  if (stack_index == 0) {
+    if (!next_game())
+      return true;
+  } else {
+    commit();
+  }
+  return false;
+}
+
+__device__ void Thinker::commit_from_leaf(int score) {
+  UpperNode &parent = stack[stack_index-1];
+  parent.alpha = max(parent.alpha, -score);
+  stack_index--;
+}
+
+__device__ int Thinker::think() {
+  ull nodes_count = 0;
+  while (true) {
+    nodes_count++;
+    if (stack_index == stack_size) {
+      int score = round(evaluator.eval(leaf_me, leaf_op));
+      commit_from_leaf(score);
+    } else {
+      UpperNode &node = stack[stack_index];
+      if (node.completed()) {
+        if (node.size() == 0) { // pass
+          if (node.passed()) { // end game
+            node.alpha = node.score();
+            if (commit_or_next()) return nodes_count;
+          } else {
+            pass();
+          }
+        } else { // completed
+          if (commit_or_next()) return nodes_count;
+        }
+      } else if (node.alpha >= node.beta) {
+        if (commit_or_next()) return nodes_count;
+      } else {
+        int pos = node.pop();
+        ull flip_bits = flip(node.player_pos(), node.opponent_pos(), pos);
+        assert(flip_bits);
+        if (stack_index == stack_size - 1) {
+          leaf_me = node.opponent_pos() ^ flip_bits;
+          leaf_op = (node.player_pos() ^ flip_bits) | UINT64_C(1) << pos;
+        } else {
+          UpperNode& next_node = stack[stack_index+1];
+          next_node = node.move(flip_bits, UINT64_C(1) << pos, table);
+        }
+        ++stack_index;
+      }
+    }
+  }
+}
+
+__global__ void think_kernel(
+    const AlphaBetaProblem * const abp, int * const result, UpperNode * const stack_space,
+    size_t count, size_t depth, Table table, Evaluator evaluator, ull * const nodes_total) {
+  index_shared = blockIdx.x;
+  __syncthreads();
+  size_t index = atomicAdd(&index_shared, gridDim.x);
+  const size_t upper_stack_size = depth;
+  if (index < count) {
+    UpperNode *stack = stack_space + index * upper_stack_size;
+    const AlphaBetaProblem &problem = abp[index];
+    Thinker thinker = {
+      0, // stack_index
+      0, 0, // leaf
+      stack, // upper_stack
+      upper_stack_size, // upper_stack_size
+      abp, // abp
+      result, // result
+      count, // count
+      index, // index
+      table, // table
+      evaluator // evaluator
+    };
+    thinker.stack[0] = UpperNode(problem.player, problem.opponent, problem.alpha, problem.beta);
+    ull nodes_count = thinker.think();
     atomicAdd(nodes_total, nodes_count);
   }
 }
@@ -340,7 +494,8 @@ void init_batch(BatchedTask &bt, size_t batch_size, size_t max_depth, const Tabl
 }
 
 void launch_batch(const BatchedTask &bt) {
-  alpha_beta_kernel<<<bt.grid_size, nodesPerBlock, 0, *bt.str>>>(bt.abp, bt.result, bt.upper_stacks, bt.size, bt.max_depth - lower_stack_depth, bt.table, bt.total);
+  alpha_beta_kernel<<<bt.grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * (lower_stack_depth + 1), *bt.str>>>(
+      bt.abp, bt.result, bt.upper_stacks, bt.size, bt.max_depth - lower_stack_depth, bt.table, bt.total);
 }
 
 bool is_ready_batch(const BatchedTask &bt) {
@@ -353,5 +508,38 @@ void destroy_batch(const BatchedTask &bt) {
   cudaFree(bt.abp);
   cudaFree(bt.result);
   cudaFree(bt.upper_stacks);
+  cudaFree(bt.total);
+}
+
+void init_batch(BatchedThinkTask &bt, size_t batch_size, size_t depth, const Table &table, const Evaluator &evaluator) {
+  bt.str = (cudaStream_t*)malloc(sizeof(cudaStream_t));
+  cudaStreamCreate(bt.str);
+  cudaMallocManaged((void**)&bt.abp, sizeof(AlphaBetaProblem) * batch_size);
+  cudaMallocManaged((void**)&bt.result, sizeof(int) * batch_size);
+  cudaMallocManaged((void**)&bt.total, sizeof(ull));
+  *bt.total = 0;
+  bt.table = table;
+  bt.evaluator = evaluator;
+  bt.size = batch_size;
+  bt.grid_size = (batch_size + chunk_size - 1) / chunk_size;
+  bt.depth = depth;
+  cudaMalloc((void**)&bt.stack_space, sizeof(UpperNode) * bt.grid_size * nodesPerBlock * bt.depth);
+}
+
+void launch_batch(const BatchedThinkTask &bt) {
+  think_kernel<<<bt.grid_size, nodesPerBlock, 0, *bt.str>>>(
+      bt.abp, bt.result, bt.stack_space, bt.size, bt.depth, bt.table, bt.evaluator, bt.total);
+}
+
+bool is_ready_batch(const BatchedThinkTask &bt) {
+  return cudaStreamQuery(*bt.str) == cudaSuccess;
+}
+
+void destroy_batch(const BatchedThinkTask &bt) {
+  cudaStreamDestroy(*bt.str);
+  free(bt.str);
+  cudaFree(bt.abp);
+  cudaFree(bt.result);
+  cudaFree(bt.stack_space);
   cudaFree(bt.total);
 }
