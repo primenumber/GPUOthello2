@@ -117,11 +117,12 @@ __host__ __device__ float Evaluator::eval(ull me, ull op) {
   float score = 0.0f;
   for (int i = 0; i < 4; ++i) {
     for (size_t j = 0; j < features_count; ++j) {
-      float *values_j = values[j];
 #ifdef __CUDA_ARCH__
+      const float * const values_j = (const float *)__ldg((ull*)(values + j));
       score += __ldg(values_j + get_index(me_r, op_r, features[j]));
       score += __ldg(values_j + get_index(flipDiag(me_r), flipDiag(op_r), features[j]));
 #else
+      const float * const values_j = values[j];
       score += values_j[get_index(me_r, op_r, features[j])];
       score += values_j[get_index(flipDiag(me_r), flipDiag(op_r), features[j])];
 #endif
