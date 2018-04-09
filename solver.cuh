@@ -35,7 +35,6 @@ struct BatchedTask {
 struct BatchedThinkTask {
   cudaStream_t *str;
   AlphaBetaProblem *abp;
-  UpperNode *stack_space;
   Table table;
   Evaluator evaluator;
   int *result;
