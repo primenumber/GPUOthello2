@@ -409,7 +409,7 @@ __device__ bool Thinker::next_game() {
 __device__ void Thinker::commit() {
   Node &parent = get_parent_node();
   Node &node = get_node();
-  table.update(node.mg.player_pos(), node.mg.opponent_pos(), -parent.beta, -parent.alpha, node.alpha);
+  //table.update(node.mg.player_pos(), node.mg.opponent_pos(), -parent.beta, -parent.alpha, node.alpha);
   parent.alpha = max(parent.alpha, node.passed_prev ? node.alpha : -node.alpha);
   stack_index--;
 }
@@ -464,14 +464,14 @@ __device__ int Thinker::think() {
           } else {
             Node& next_node = get_next_node();
             MobilityGenerator next_mg = node.mg.move(flip_bits, next_bit);
-            Entry entry = table.find(next_mg.player_pos(), next_mg.opponent_pos());
-            if (entry.enable) {
-              char next_alpha = max(-node.beta, entry.lower);
-              char next_beta = min(-node.alpha, entry.upper);
-              next_node = Node(next_mg, next_alpha, next_beta);
-            } else {
+            //Entry entry = table.find(next_mg.player_pos(), next_mg.opponent_pos());
+            //if (entry.enable) {
+            //  char next_alpha = max(-node.beta, entry.lower);
+            //  char next_beta = min(-node.alpha, entry.upper);
+            //  next_node = Node(next_mg, next_alpha, next_beta);
+            //} else {
               next_node = Node(next_mg, -node.beta, -node.alpha);
-            }
+            //}
           }
           ++stack_index;
         }
