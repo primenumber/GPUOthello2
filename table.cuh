@@ -31,6 +31,7 @@ class Table {
   }
   __device__ void lock(ull index) const {
     while (atomicCAS(mutex + index, 0, 1) != 0);
+    __threadfence();
   }
   __device__ void unlock(ull index) const {
     __threadfence();
