@@ -11,7 +11,7 @@ __device__ Entry Table::find(ull player, ull opponent) const {
       result = entries[hash];
       if (result.player != player || result.opponent != opponent) {
         result.enable = false;
-      } else {
+      } else if (result.enable) {
         atomicAdd(hit_count, 1);
       }
       unlock(hash);
