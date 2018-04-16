@@ -21,6 +21,9 @@ __device__ Entry Table::find(ull player, ull opponent) const {
 }
 
 __device__ void Table::update(ull player, ull opponent, char upper, char lower, char value) const {
+  if (upper <= lower) {
+    return;
+  }
   atomicAdd(update_count, 1);
   Entry entry;
   if (value > lower && value < upper) {
