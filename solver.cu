@@ -144,7 +144,7 @@ class UpperNode {
   static constexpr int max_mobility_count = 46;
   __device__ UpperNode(ull player, ull opponent, char alpha, char beta, bool pass = false)
       : player(player), opponent(opponent), possize(0), index(0),
-      result(-64), alpha(alpha), beta(beta), prev_passed(pass) {
+      result(-64), start_alpha(alpha), alpha(alpha), beta(beta), prev_passed(pass) {
     MobilityGenerator mg(player, opponent);
     char cntary[max_mobility_count];
     while(!mg.completed()) {
@@ -207,6 +207,7 @@ class UpperNode {
     alpha = max(alpha, result);
   }
   char result;
+  char start_alpha;
   char alpha;
   char beta;
  private:
@@ -237,7 +238,7 @@ __device__ bool Solver::next_game() {
 __device__ void Solver::commit_upper() {
   UpperNode &parent = upper_stack[stack_index-1];
   UpperNode &node = upper_stack[stack_index];
-  table.update(node.player_pos(), node.opponent_pos(), -parent.beta, -parent.alpha, node.result);
+  table.update(node.player_pos(), node.opponent_pos(), node.beta, node.start_alpha, node.result);
   parent.commit(node.passed() ? node.result: -node.result);
   stack_index--;
 }
