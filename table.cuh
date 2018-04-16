@@ -3,7 +3,7 @@
 
 struct Entry {
  public:
-  __host__ __device__ Entry() : player(0), opponent(0), upper(64), lower(64), enable(false) {}
+  __host__ __device__ Entry() : player(0), opponent(0), upper(64), lower(-64), enable(false) {}
   __host__ __device__ Entry(ull player, ull opponent, char upper, char lower)
     : player(player), opponent(opponent), upper(upper), lower(lower), enable(true) {}
   ull player;
