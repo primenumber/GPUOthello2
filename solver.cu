@@ -58,17 +58,22 @@ class MobilityGenerator {
 
 struct Node {
   MobilityGenerator mg;
-  char alpha;
-  char beta;
+  short result;
+  short alpha;
+  short beta;
   bool not_pass;
   bool passed_prev;
   __device__ Node() {}
   __host__ __device__ Node(const MobilityGenerator &mg, int alpha, int beta, bool passed_prev = false)
-    : mg(mg), alpha(alpha), beta(beta), not_pass(false), passed_prev(passed_prev) {}
+    : mg(mg), result(-SHRT_MAX), alpha(alpha), beta(beta), not_pass(false), passed_prev(passed_prev) {}
   __host__ __device__ Node(const MobilityGenerator &mg)
     : Node(mg, -64, 64) {}
   Node(const Node &) = default;
   Node& operator=(const Node &) = default;
+  __device__ void commit(short score) {
+    result = max(result, score);
+    alpha = max(alpha, result);
+  }
 };
 
 extern __shared__ Node nodes_stack[];
@@ -117,9 +122,9 @@ __device__ void Solver::commit_lower_impl() {
   Node& node = get_node();
   Node& parent = get_parent_node();
   if (node.passed_prev) {
-    parent.alpha = max(node.alpha, parent.alpha);
+    parent.commit(node.result);
   } else {
-    parent.alpha = max(-node.alpha, parent.alpha);
+    parent.commit(-node.result);
   }
   --stack_index;
 }
@@ -128,6 +133,7 @@ __device__ void Solver::pass() {
   Node& node = get_node();
   node.mg = node.mg.pass();
   int tmp = node.alpha;
+  node.result = -SHRT_MAX;
   node.alpha = -node.beta;
   node.beta = -tmp;
   node.passed_prev = true;
@@ -138,7 +144,7 @@ class UpperNode {
   static constexpr int max_mobility_count = 46;
   __device__ UpperNode(ull player, ull opponent, char alpha, char beta, bool pass = false)
       : player(player), opponent(opponent), possize(0), index(0),
-      alpha(alpha), beta(beta), prev_passed(pass) {
+      result(-64), alpha(alpha), beta(beta), prev_passed(pass) {
     MobilityGenerator mg(player, opponent);
     char cntary[max_mobility_count];
     while(!mg.completed()) {
@@ -196,6 +202,11 @@ class UpperNode {
       return UpperNode(opponent, player, -beta, -alpha, true);
     }
   }
+  __device__ void commit(char score) {
+    result = max(result, score);
+    alpha = max(alpha, result);
+  }
+  char result;
   char alpha;
   char beta;
  private:
@@ -215,7 +226,7 @@ __shared__ unsigned int index_shared;
 
 __device__ bool Solver::next_game() {
   UpperNode &node = upper_stack[0];
-  result[index] = node.alpha;
+  result[index] = node.result;
   index = atomicAdd(&index_shared, gridDim.x);
   if (index < count) {
     upper_stack[0] = UpperNode(abp[index].player, abp[index].opponent, abp[index].alpha, abp[index].beta);
@@ -226,8 +237,8 @@ __device__ bool Solver::next_game() {
 __device__ void Solver::commit_upper() {
   UpperNode &parent = upper_stack[stack_index-1];
   UpperNode &node = upper_stack[stack_index];
-  table.update(node.player_pos(), node.opponent_pos(), -parent.beta, -parent.alpha, node.alpha);
-  parent.alpha = max(parent.alpha, node.passed() ? node.alpha : -node.alpha);
+  table.update(node.player_pos(), node.opponent_pos(), -parent.beta, -parent.alpha, node.result);
+  parent.commit(node.passed() ? node.result: -node.result);
   stack_index--;
 }
 
@@ -244,7 +255,7 @@ __device__ bool Solver::commit_or_next() {
 __device__ void Solver::commit_to_upper() {
   UpperNode &parent = upper_stack[stack_index-1];
   Node &node = get_node();
-  parent.alpha = max(parent.alpha, node.passed_prev ? node.alpha : -node.alpha);
+  parent.commit(node.passed_prev ? node.result : -node.result);
   --stack_index;
 }
 
@@ -261,7 +272,7 @@ __device__ bool Solver::solve_all_upper() {
   if (node.completed()) {
     if (node.size() == 0) { // pass
       if (node.passed()) {
-        node.alpha = node.score();
+        node.result = node.score();
         if (commit_or_next()) return true;
       } else {
         pass_upper();
@@ -294,7 +305,7 @@ __device__ void Solver::solve_all_lower() {
       commit_lower();
     } else { // pass
       if (node.passed_prev) { // end game
-        node.alpha = node.mg.score();
+        node.result = node.mg.score();
         commit_lower();
       } else { // pass
         pass();
@@ -391,6 +402,7 @@ __device__ void Thinker::pass() {
   Node& node = get_node();
   node.mg = node.mg.pass();
   int tmp = node.alpha;
+  node.result = -SHRT_MAX;
   node.alpha = -node.beta;
   node.beta = -tmp;
   node.passed_prev = true;
@@ -398,7 +410,7 @@ __device__ void Thinker::pass() {
 
 __device__ bool Thinker::next_game() {
   Node &node = get_node();
-  result[index] = node.alpha;
+  result[index] = node.result;
   index = atomicAdd(&index_shared, gridDim.x);
   if (index < count) {
     node = Node(MobilityGenerator(abp[index].player, abp[index].opponent), abp[index].alpha, abp[index].beta);
@@ -409,8 +421,8 @@ __device__ bool Thinker::next_game() {
 __device__ void Thinker::commit() {
   Node &parent = get_parent_node();
   Node &node = get_node();
-  //table.update(node.mg.player_pos(), node.mg.opponent_pos(), -parent.beta, -parent.alpha, node.alpha);
-  parent.alpha = max(parent.alpha, node.passed_prev ? node.alpha : -node.alpha);
+  //table.update(node.mg.player_pos(), node.mg.opponent_pos(), -parent.beta, -parent.alpha, node.result);
+  parent.commit(node.passed_prev ? node.result : -node.result);
   stack_index--;
 }
 
@@ -426,7 +438,7 @@ __device__ bool Thinker::commit_or_next() {
 
 __device__ void Thinker::commit_from_leaf(int score) {
   Node &parent = get_parent_node();
-  parent.alpha = max(parent.alpha, -score);
+  parent.commit(-score);
   stack_index--;
 }
 
@@ -442,7 +454,7 @@ __device__ int Thinker::think() {
       if (node.mg.completed()) {
         if (!node.not_pass) { // pass
           if (node.passed_prev) { // end game
-            node.alpha = node.mg.score();
+            node.result = node.mg.score();
             if (commit_or_next()) return nodes_count;
           } else {
             pass();
