@@ -33,6 +33,8 @@ __device__ void Table::update(ull player, ull opponent, char upper, char lower, 
       entry = Entry(player, opponent, value, -64);
     } else if (value >= upper) {
       entry = Entry(player, opponent, 64, value);
+    } else {
+      return;
     }
   }
   ull hash = (player + 17 * opponent) % size;
