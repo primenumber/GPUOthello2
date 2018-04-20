@@ -142,9 +142,9 @@ __device__ void Solver::pass() {
 class UpperNode {
  public:
   static constexpr int max_mobility_count = 46;
-  __device__ UpperNode(ull player, ull opponent, char alpha, char beta, bool pass = false)
+  __device__ UpperNode(ull player, ull opponent, char result, char alpha, char beta, bool pass = false)
       : player(player), opponent(opponent), possize(0), index(0),
-      result(-64), start_alpha(alpha), alpha(alpha), beta(beta), prev_passed(pass) {
+      result(result), start_alpha(alpha), alpha(alpha), beta(beta), prev_passed(pass) {
     MobilityGenerator mg(player, opponent);
     char cntary[max_mobility_count];
     while(!mg.completed()) {
@@ -187,9 +187,13 @@ class UpperNode {
     if (entry.enable) {
       char next_alpha = max(-beta, entry.lower);
       char next_beta = min(-alpha, entry.upper);
-      return UpperNode(next_player, next_opponent, next_alpha, next_beta);
+      if (next_alpha >= next_beta) {
+        return UpperNode(next_player, next_opponent, next_beta, next_alpha, next_beta);
+      } else {
+        return UpperNode(next_player, next_opponent, -64, next_alpha, next_beta);
+      }
     } else {
-      return UpperNode(next_player, next_opponent, -beta, -alpha);
+      return UpperNode(next_player, next_opponent, -64, -beta, -alpha);
     }
   }
   __device__ UpperNode pass(Table table) const {
@@ -197,9 +201,13 @@ class UpperNode {
     if (entry.enable) {
       char next_alpha = max(-beta, entry.lower);
       char next_beta = min(-alpha, entry.upper);
-      return UpperNode(opponent, player, next_alpha, next_beta, true);
+      if (next_alpha >= next_beta) {
+        return UpperNode(opponent, player, next_beta, next_alpha, next_beta, true);
+      } else {
+        return UpperNode(opponent, player, -64, next_alpha, next_beta, true);
+      }
     } else {
-      return UpperNode(opponent, player, -beta, -alpha, true);
+      return UpperNode(opponent, player, -64, -beta, -alpha, true);
     }
   }
   __device__ void commit(char score) {
@@ -230,7 +238,7 @@ __device__ bool Solver::next_game() {
   result[index] = node.result;
   index = atomicAdd(&index_shared, gridDim.x);
   if (index < count) {
-    upper_stack[0] = UpperNode(abp[index].player, abp[index].opponent, abp[index].alpha, abp[index].beta);
+    upper_stack[0] = UpperNode(abp[index].player, abp[index].opponent, -64, abp[index].alpha, abp[index].beta);
   }
   return index < count;
 }
@@ -359,7 +367,7 @@ __global__ void alpha_beta_kernel(
       index, // index
       table // table
     };
-    solver.upper_stack[0] = UpperNode(problem.player, problem.opponent, problem.alpha, problem.beta);
+    solver.upper_stack[0] = UpperNode(problem.player, problem.opponent, -64, problem.alpha, problem.beta);
     ull nodes_count = solver.solve_all();
     atomicAdd(nodes_total, nodes_count);
   }
