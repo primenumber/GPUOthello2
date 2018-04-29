@@ -1,7 +1,7 @@
 #pragma once
 #include "types.hpp"
 
-constexpr ull emptymask = UINT64_C(0x007E7E7E7E7E7E00);
+constexpr ull emptymask = 0x007E7E7E7E7E7E00ull;
 
 __host__ __device__ ull flip(ull player, ull opponent, int pos);
 __host__ __device__ ull mobility(ull player, ull opponent);
