@@ -47,7 +47,7 @@ float expand_ybwc_impl(const ull player, const ull opponent,
   if (stones_count(player, opponent)-4 == max_depth) {
     auto itr = table.find(std::make_pair(player, opponent));
     if (itr == std::end(table)) {
-      tasks.emplace_back(player, opponent, alpha, beta);
+      tasks.emplace_back(player, opponent, -64, 64);
       return evaluator.eval(player, opponent);
     } else {
       return itr->second;
