@@ -19,4 +19,5 @@ int main(int argc, char **argv) {
   float INF = std::numeric_limits<float>::infinity();
   expand_ybwc(black, white, -INF, INF, table, evaluator, max_depth, tasks);
   std::cout << tasks.size() << std::endl;
+  return 0;
 }
