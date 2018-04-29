@@ -11,7 +11,7 @@ class MobilityGenerator {
  public:
   __device__ MobilityGenerator() {}
   __host__ __device__ MobilityGenerator(ull player, ull opponent)
-    : x(~opponent), y(~player) {}
+    : x(~opponent & emptymask), y(~player & emptymask) {}
   MobilityGenerator(const MobilityGenerator &) = default;
   MobilityGenerator& operator=(const MobilityGenerator &) = default;
   __host__ __device__ ull player_pos() const {

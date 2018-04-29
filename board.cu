@@ -71,10 +71,11 @@ __host__ __device__ ull mobility_impl(ull player, ull opponent, int simd_index) 
 }
 
 __host__ __device__ ull mobility(ull player, ull opponent) {
-  return mobility_impl(player, opponent, 0)
+  return emptymask &
+    (mobility_impl(player, opponent, 0)
     | mobility_impl(player, opponent, 1)
     | mobility_impl(player, opponent, 2)
-    | mobility_impl(player, opponent, 3);
+    | mobility_impl(player, opponent, 3));
 }
 
 __host__ __device__ int mobility_count(ull player, ull opponent) {
