@@ -28,6 +28,17 @@ constexpr NodeType other_child(const NodeType type) {
   }
 }
 
+struct BoardWithValue {
+  BoardWithValue(ull player, ull opponent, int score)
+    : player(player), opponent(opponent), score(score) {}
+  ull player, opponent;
+  int score;
+};
+
+bool operator<(const BoardWithValue& lhs, const BoardWithValue &rhs) {
+  return lhs.score < rhs.score;
+}
+
 template <NodeType type>
 float expand_ybwc_impl(const ull player, const ull opponent,
     float alpha, const float beta,
@@ -42,8 +53,7 @@ float expand_ybwc_impl(const ull player, const ull opponent,
       return itr->second;
     }
   }
-  using T = std::tuple<float, ull, ull>;
-  std::vector<T> children;
+  std::vector<BoardWithValue> children;
   for (ull bits = mobility(player, opponent); bits; bits &= bits-1) {
     const ull pos_bit = bits & -bits;
     const int pos = __builtin_popcountll(pos_bit - 1);
@@ -51,24 +61,18 @@ float expand_ybwc_impl(const ull player, const ull opponent,
     const ull next_player = opponent ^ flip_bits;
     const ull next_opponent = (player ^ flip_bits) | pos_bit;
     const float value = evaluator.eval(next_player, next_opponent);
-    children.emplace_back(value, next_player, next_opponent);
+    children.emplace_back(next_player, next_opponent, value);
   }
-  std::sort(std::begin(children), std::end(children),
-      [] (const T& lhs, const T& rhs) {
-        return std::get<0>(lhs) < std::get<0>(rhs);
-      });
+  std::sort(std::begin(children), std::end(children));
   bool first = true;
   float result = -std::numeric_limits<float>::infinity();
   for (const auto &child : children) {
-    float point;
-    ull next_player, next_opponent;
-    std::tie(point, next_player, next_opponent) = child;
     float child_val;
     if (first) {
-      child_val = expand_ybwc_impl<first_child(type)>(next_player, next_opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
+      child_val = expand_ybwc_impl<first_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
       first = false;
     } else {
-      child_val = expand_ybwc_impl<other_child(type)>(next_player, next_opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
+      child_val = expand_ybwc_impl<other_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
     }
     result = std::max(result, child_val);
     alpha = std::max(alpha, result);
