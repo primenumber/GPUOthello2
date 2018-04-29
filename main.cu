@@ -1,11 +1,15 @@
 #include "solver.cuh"
 #include <algorithm>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 #include <tuple>
+#include <unordered_map>
 #include <boost/timer/timer.hpp>
 #include "to_board.hpp"
+#include "board.cuh"
+#include "eval.cuh"
 
 void output_board(const ull p, const ull o) {
   for (int i = 0; i < 8; ++i) {
@@ -29,161 +33,163 @@ struct Batch {
   std::vector<std::string> vstr;
 };
 
-struct ThinkBatch {
-  BatchedThinkTask bt;
-  std::vector<std::string> vstr;
+namespace std {
+template<>
+struct hash<pair<ull, ull>> {
+  size_t operator()(const pair<ull, ull> &p) const {
+    return p.first * 17 + p.second;
+  }
+};
+}
+
+using Table2 = std::unordered_map<std::pair<ull, ull>, int>;
+
+enum class NodeType {
+  PV,
+  Cut,
+  All,
+  Unknown
 };
 
-void think(char **argv) {
-  FILE *fp_in = fopen(argv[1], "r");
-  FILE *fp_out = fopen(argv[2], "w");
-  int max_depth = std::stoi(argv[3]);
-  int depth = std::stoi(argv[4]);
-  Evaluator evaluator("subboard.txt", "lsval/lsval_52_b");
-  int n;
-  fscanf(fp_in, "%d", &n);
-  std::vector<std::string> vboard(n);
-  for (int i = 0; i < n; ++i) {
-    char buf[17];
-    fscanf(fp_in, "%s", buf);
-    vboard[i] = buf;
+constexpr NodeType first_child(const NodeType type) {
+  switch (type) {
+    case NodeType::PV: return NodeType::PV;
+    case NodeType::Cut: return NodeType::All;
+    case NodeType::All: return NodeType::Cut;
+    default: return NodeType::Unknown;
   }
-  std::sort(std::begin(vboard), std::end(vboard));
-  vboard.erase(std::unique(std::begin(vboard), std::end(vboard)), std::end(vboard));
-  n = vboard.size();
-  fprintf(stderr, "n = %d\n", n);
-  constexpr size_t batch_size = 8192;
-  size_t batch_count = (n + batch_size - 1) / batch_size;
-  std::vector<ThinkBatch> vb(batch_count);
-  Table table;
-  constexpr size_t table_size = 50000001;
-  cudaMallocManaged((void**)&table.entries, sizeof(Entry) * table_size);
-  cudaMallocManaged((void**)&table.mutex, sizeof(int) * table_size);
-  cudaMallocManaged((void**)&table.update_count, sizeof(ull));
-  cudaMallocManaged((void**)&table.hit_count, sizeof(ull));
-  cudaMallocManaged((void**)&table.lookup_count, sizeof(ull));
-  table.size = table_size;
-  *table.update_count = 0;
-  *table.hit_count = 0;
-  *table.lookup_count = 0;
-  memset(table.entries, 0, sizeof(Entry) * table_size);
-  memset(table.mutex, 0, sizeof(int) * table_size);
-  for (size_t i = 0; i < batch_count; ++i) {
-    int size = min(batch_size, n - i*batch_size);
-    init_batch(vb[i].bt, size, depth, table, evaluator);
-    for (int j = 0; j < vb[i].bt.size; ++j) {
-      ull player, opponent;
-      std::tie(player, opponent) = toBoard(vboard[i*batch_size+j].c_str());
-      vb[i].bt.abp[j] = AlphaBetaProblem(player, opponent);
-      vb[i].vstr.push_back(vboard[i*batch_size+j]);
+}
+
+constexpr NodeType other_child(const NodeType type) {
+  switch (type) {
+    case NodeType::PV: return NodeType::Cut;
+    case NodeType::Cut: return NodeType::All;
+    case NodeType::All: return NodeType::Cut;
+    default: return NodeType::Unknown;
+  }
+}
+
+template <NodeType type>
+float expand_ybwc(const ull player, const ull opponent,
+    float alpha, const float beta,
+    Table2 &table, const Evaluator &evaluator, const int max_depth,
+    std::vector<AlphaBetaProblem> &tasks, bool passed_prev = false) {
+  if (stones_count(player, opponent)-4 == max_depth) {
+    auto itr = table.find(std::make_pair(player, opponent));
+    if (itr == std::end(table)) {
+      tasks.emplace_back(player, opponent, alpha, beta);
+      return evaluator.eval(player, opponent);
+    } else {
+      return itr->second;
     }
   }
-  boost::timer::cpu_timer timer;
-  for (const auto &b : vb) {
-    launch_batch(b.bt);
+  using T = std::tuple<float, ull, ull>;
+  std::vector<T> children;
+  for (ull bits = mobility(player, opponent); bits; bits &= bits-1) {
+    const ull pos_bit = bits & -bits;
+    const int pos = __builtin_popcountll(pos_bit - 1);
+    const ull flip_bits = flip(player, opponent, pos);
+    const ull next_player = opponent ^ flip_bits;
+    const ull next_opponent = (player ^ flip_bits) | pos_bit;
+    const float value = evaluator.eval(next_player, next_opponent);
+    children.emplace_back(value, next_player, next_opponent);
   }
-  while (true) {
-    bool finished = true;
-    for (const auto &b : vb) {
-      if (!is_ready_batch(b.bt)) finished = false;
+  std::sort(std::begin(children), std::end(children),
+      [] (const T& lhs, const T& rhs) {
+        return std::get<0>(lhs) < std::get<0>(rhs);
+      });
+  bool first = true;
+  float result = -std::numeric_limits<float>::infinity();
+  for (const auto &child : children) {
+    float point;
+    ull next_player, next_opponent;
+    std::tie(point, next_player, next_opponent) = child;
+    float child_val;
+    if (first) {
+      child_val = expand_ybwc<first_child(type)>(next_player, next_opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
+      first = false;
+    } else {
+      child_val = expand_ybwc<other_child(type)>(next_player, next_opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
     }
-    if (finished) break;
+    result = std::max(result, child_val);
+    alpha = std::max(alpha, result);
+    if (alpha >= beta) return alpha;
   }
-  fprintf(stderr, "%s, elapsed: %.6fs, table update count: %llu, table hit: %llu, table find: %llu\n",
-      cudaGetErrorString(cudaGetLastError()), timer.elapsed().wall/1000000000.0,
-      *table.update_count, *table.hit_count, *table.lookup_count);
-  ull total = 0;
-  for (const auto &b : vb) {
-    total += *b.bt.total;
-    for (int j = 0; j < b.bt.size; ++j) {
-      fprintf(fp_out, "%s %d\n", b.vstr[j].c_str(), b.bt.result[j]);
+  if (first) {
+    if (passed_prev) {
+      return final_score(player, opponent);
+    } else {
+      return expand_ybwc<first_child(type)>(opponent, player, -beta, -alpha, table, evaluator, max_depth, tasks, true);
     }
-    destroy_batch(b.bt);
   }
-  fprintf(stderr, "total nodes: %llu\n", total);
-  cudaFree(table.entries);
-  cudaFree(table.mutex);
-  cudaFree(table.update_count);
-  cudaFree(table.hit_count);
-  cudaFree(table.lookup_count);
+  return result;
 }
 
 int main(int argc, char **argv) {
-  if (argc < 4) {
-    fprintf(stderr, "usage: %s INPUT OUTPUT DEPTH [THINK_DEPTH]\n", argv[0]);
-    return 1;
+  if (argc < 2) {
+    std::cerr << "Usage: " << argv[0] << " YBWC_DEPTH" << std::endl;
   }
-  if (argc == 5) {
-    think(argv);
-    return 0;
-  }
-  FILE *fp_in = fopen(argv[1], "r");
-  FILE *fp_out = fopen(argv[2], "w");
-  int max_depth = std::stoi(argv[3]);
-  int n;
-  fscanf(fp_in, "%d", &n);
-  std::vector<std::string> vboard(n);
-  for (int i = 0; i < n; ++i) {
-    char buf[17];
-    fscanf(fp_in, "%s", buf);
-    vboard[i] = buf;
-  }
-  std::sort(std::begin(vboard), std::end(vboard));
-  vboard.erase(std::unique(std::begin(vboard), std::end(vboard)), std::end(vboard));
-  n = vboard.size();
-  fprintf(stderr, "n = %d\n", n);
-  constexpr size_t batch_size = 8192;
-  size_t batch_count = (n + batch_size - 1) / batch_size;
-  std::vector<Batch> vb(batch_count);
-  Table table;
-  constexpr size_t table_size = 50000001;
-  cudaMallocManaged((void**)&table.entries, sizeof(Entry) * table_size);
-  cudaMallocManaged((void**)&table.mutex, sizeof(int) * table_size);
-  cudaMallocManaged((void**)&table.update_count, sizeof(ull));
-  cudaMallocManaged((void**)&table.hit_count, sizeof(ull));
-  cudaMallocManaged((void**)&table.lookup_count, sizeof(ull));
-  table.size = table_size;
-  *table.update_count = 0;
-  *table.hit_count = 0;
-  *table.lookup_count = 0;
-  memset(table.entries, 0, sizeof(Entry) * table_size);
-  memset(table.mutex, 0, sizeof(int) * table_size);
-  for (size_t i = 0; i < batch_count; ++i) {
-    int size = min(batch_size, n - i*batch_size);
-    init_batch(vb[i].bt, size, max_depth, table);
-    for (int j = 0; j < vb[i].bt.size; ++j) {
-      ull player, opponent;
-      std::tie(player, opponent) = toBoard(vboard[i*batch_size+j].c_str());
-      vb[i].bt.abp[j] = AlphaBetaProblem(player, opponent);
-      vb[i].vstr.push_back(vboard[i*batch_size+j]);
-    }
-  }
-  boost::timer::cpu_timer timer;
-  for (const auto &b : vb) {
-    launch_batch(b.bt);
-  }
-  while (true) {
-    bool finished = true;
-    for (const auto &b : vb) {
-      if (!is_ready_batch(b.bt)) finished = false;
-    }
-    if (finished) break;
-  }
-  fprintf(stderr, "%s, elapsed: %.6fs, table update count: %llu, table hit: %llu, table find: %llu\n",
-      cudaGetErrorString(cudaGetLastError()), timer.elapsed().wall/1000000000.0,
-      *table.update_count, *table.hit_count, *table.lookup_count);
-  ull total = 0;
-  for (const auto &b : vb) {
-    total += *b.bt.total;
-    for (int j = 0; j < b.bt.size; ++j) {
-      fprintf(fp_out, "%s %d\n", b.vstr[j].c_str(), b.bt.result[j]);
-    }
-    destroy_batch(b.bt);
-  }
-  fprintf(stderr, "total nodes: %llu\n", total);
-  cudaFree(table.entries);
-  cudaFree(table.mutex);
-  cudaFree(table.update_count);
-  cudaFree(table.hit_count);
-  cudaFree(table.lookup_count);
+  size_t max_depth = std::strtoul(argv[0], nullptr, 10);
+  ull black = UINT64_C(0x0000000810000000);
+  ull white = UINT64_C(0x0000001008000000);
+  Table2 table;
+  Evaluator evaluator("subboard.txt", "value6x6/value");
+  std::vector<AlphaBetaProblem> tasks;
+  float INF = std::numeric_limits<float>::infinity();
+  expand_ybwc<NodeType::PV>(black, white, -INF, INF, table, evaluator, max_depth, tasks);
+  std::cout << tasks.size() << std::endl;
+  //constexpr size_t batch_size = 8192;
+  //size_t batch_count = (n + batch_size - 1) / batch_size;
+  //std::vector<Batch> vb(batch_count);
+  //Table table;
+  //constexpr size_t table_size = 50000001;
+  //cudaMallocManaged((void**)&table.entries, sizeof(Entry) * table_size);
+  //cudaMallocManaged((void**)&table.mutex, sizeof(int) * table_size);
+  //cudaMallocManaged((void**)&table.update_count, sizeof(ull));
+  //cudaMallocManaged((void**)&table.hit_count, sizeof(ull));
+  //cudaMallocManaged((void**)&table.lookup_count, sizeof(ull));
+  //table.size = table_size;
+  //*table.update_count = 0;
+  //*table.hit_count = 0;
+  //*table.lookup_count = 0;
+  //memset(table.entries, 0, sizeof(Entry) * table_size);
+  //memset(table.mutex, 0, sizeof(int) * table_size);
+  //for (size_t i = 0; i < batch_count; ++i) {
+  //  int size = min(batch_size, n - i*batch_size);
+  //  init_batch(vb[i].bt, size, max_depth, table);
+  //  for (int j = 0; j < vb[i].bt.size; ++j) {
+  //    ull player, opponent;
+  //    std::tie(player, opponent) = toBoard(vboard[i*batch_size+j].c_str());
+  //    vb[i].bt.abp[j] = AlphaBetaProblem(player, opponent);
+  //    vb[i].vstr.push_back(vboard[i*batch_size+j]);
+  //  }
+  //}
+  //boost::timer::cpu_timer timer;
+  //for (const auto &b : vb) {
+  //  launch_batch(b.bt);
+  //}
+  //while (true) {
+  //  bool finished = true;
+  //  for (const auto &b : vb) {
+  //    if (!is_ready_batch(b.bt)) finished = false;
+  //  }
+  //  if (finished) break;
+  //}
+  //fprintf(stderr, "%s, elapsed: %.6fs, table update count: %llu, table hit: %llu, table find: %llu\n",
+  //    cudaGetErrorString(cudaGetLastError()), timer.elapsed().wall/1000000000.0,
+  //    *table.update_count, *table.hit_count, *table.lookup_count);
+  //ull total = 0;
+  //for (const auto &b : vb) {
+  //  total += *b.bt.total;
+  //  for (int j = 0; j < b.bt.size; ++j) {
+  //    fprintf(fp_out, "%s %d\n", b.vstr[j].c_str(), b.bt.result[j]);
+  //  }
+  //  destroy_batch(b.bt);
+  //}
+  //fprintf(stderr, "total nodes: %llu\n", total);
+  //cudaFree(table.entries);
+  //cudaFree(table.mutex);
+  //cudaFree(table.update_count);
+  //cudaFree(table.hit_count);
+  //cudaFree(table.lookup_count);
 }

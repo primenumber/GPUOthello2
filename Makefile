@@ -1,6 +1,6 @@
 NVCC=nvcc
-NVCCOPT=-g -std=c++14 --compiler-options -march=native -arch=sm_61 -m64 -O3 -lboost_timer -rdc=true
-CXXOPT=-std=c++14 -march=native -O3
+NVCCOPT=-g -std=c++14 --compiler-options "-march=native -mtune=native -Wall -Wextra" -arch=sm_61 -m64 -O3 -lboost_timer -rdc=true
+CXXOPT=-std=c++14 -march=native -O3 -Wall -Wextra
 OBJS=main.o solver.o to_board.o board.o table.o eval.o eval_host.o
 
 .SUFFIXES: .cpp .c .cu .o
