@@ -102,7 +102,7 @@ __host__ __device__ ull rot90(const ull x) {
   return flipVertical(flipDiag(x));
 }
 
-__host__ __device__ int Evaluator::get_index(const ull me, const ull op, const ull feature) {
+__host__ __device__ int Evaluator::get_index(const ull me, const ull op, const ull feature) const {
 #ifdef __CUDA_ARCH__
   return __ldg(base3_table + parallel_bit_extract(me, feature))
     + 2 * __ldg(base3_table + parallel_bit_extract(op, feature));
@@ -112,7 +112,7 @@ __host__ __device__ int Evaluator::get_index(const ull me, const ull op, const u
 #endif
 }
 
-__host__ __device__ float Evaluator::eval(ull me, ull op) {
+__host__ __device__ float Evaluator::eval(ull me, ull op) const {
   ull me_r = me, op_r = op;
   float score = 0.0f;
   for (int i = 0; i < 4; ++i) {
