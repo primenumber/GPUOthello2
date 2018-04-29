@@ -15,7 +15,7 @@ inline __host__ __device__ int final_score(ull player, ull opponent) {
   int ocnt = __builtin_popcountll(opponent);
 #endif
   if (pcnt == ocnt) return 0;
-  if (pcnt > ocnt) return 64 - 2*ocnt;
-  return 2*pcnt - 64;
+  if (pcnt > ocnt) return 36 - 2*ocnt;
+  return 2*pcnt - 36;
 }
 __host__ __device__ int stones_count(ull player, ull opponent);
