@@ -69,10 +69,10 @@ float expand_ybwc_impl(const ull player, const ull opponent,
   for (const auto &child : children) {
     float child_val;
     if (first) {
-      child_val = expand_ybwc_impl<first_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
+      child_val = -expand_ybwc_impl<first_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
       first = false;
     } else {
-      child_val = expand_ybwc_impl<other_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
+      child_val = -expand_ybwc_impl<other_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
     }
     result = std::max(result, child_val);
     alpha = std::max(alpha, result);
@@ -82,7 +82,7 @@ float expand_ybwc_impl(const ull player, const ull opponent,
     if (passed_prev) {
       return final_score(player, opponent);
     } else {
-      return expand_ybwc_impl<first_child(type)>(opponent, player, -beta, -alpha, table, evaluator, max_depth, tasks, true);
+      return -expand_ybwc_impl<first_child(type)>(opponent, player, -beta, -alpha, table, evaluator, max_depth, tasks, true);
     }
   }
   return result;
