@@ -537,12 +537,14 @@ void init_batch(BatchedTask &bt, size_t batch_size, size_t max_depth, const Tabl
   bt.size = batch_size;
   bt.grid_size = (batch_size + chunk_size - 1) / chunk_size;
   bt.max_depth = max_depth;
-  cudaMalloc((void**)&bt.upper_stacks, sizeof(UpperNode) * bt.grid_size * nodesPerBlock * (bt.max_depth - lower_stack_depth));
+  size_t upper_stack_size = max(1ul, bt.max_depth - lower_stack_depth);
+  cudaMalloc((void**)&bt.upper_stacks, sizeof(UpperNode) * bt.grid_size * nodesPerBlock * upper_stack_size);
 }
 
 void launch_batch(const BatchedTask &bt) {
+  size_t upper_stack_size = max(1ul, bt.max_depth - lower_stack_depth);
   alpha_beta_kernel<<<bt.grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * (lower_stack_depth + 1), *bt.str>>>(
-      bt.abp, bt.result, bt.upper_stacks, bt.size, bt.max_depth - lower_stack_depth, bt.table, bt.total);
+      bt.abp, bt.result, bt.upper_stacks, bt.size, upper_stack_size, bt.table, bt.total);
 }
 
 bool is_ready_batch(const BatchedTask &bt) {
