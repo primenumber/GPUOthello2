@@ -10,7 +10,7 @@ int main(int argc, char **argv) {
   if (argc < 2) {
     std::cerr << "Usage: " << argv[0] << " YBWC_DEPTH" << std::endl;
   }
-  size_t max_depth = std::strtoul(argv[0], nullptr, 10);
+  size_t max_depth = std::strtoul(argv[1], nullptr, 10);
   ull black = UINT64_C(0x0000000810000000);
   ull white = UINT64_C(0x0000001008000000);
   Table2 table;
