@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
   ull black = UINT64_C(0x0000000810000000);
   ull white = UINT64_C(0x0000001008000000);
   Table2 table;
-  Evaluator evaluator("subboard.txt", "value6x6/value");
+  Evaluator evaluator("subboard6x6.txt", "value6x6/value");
   Table table_cache = init_table();
   while (true) {
     std::vector<AlphaBetaProblem> tasks;
