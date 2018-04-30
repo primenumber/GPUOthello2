@@ -23,6 +23,14 @@ Table init_table() {
   return table;
 }
 
+void destroy_table(Table &table) {
+  cudaFree(table.entries);
+  cudaFree(table.mutex);
+  cudaFree(table.update_count);
+  cudaFree(table.hit_count);
+  cudaFree(table.lookup_count);
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     std::cerr << "Usage: " << argv[0] << " YBWC_DEPTH" << std::endl;
@@ -53,5 +61,6 @@ int main(int argc, char **argv) {
       table[std::make_pair(tasks[i].player, tasks[i].opponent)] = batched_task.result[i];
     }
   }
+  destroy_table(table_cache);
   return 0;
 }
