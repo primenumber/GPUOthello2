@@ -32,6 +32,7 @@ __host__ Evaluator::Evaluator(const std::string &features_file_name, const std::
     cudaMallocManaged((void**)&values[i], sizeof(float) * length);
     values_stream.read((char*)values[i], sizeof(float) * length);
   }
+  values_stream.read((char*)&offset, sizeof(float));
 
   cudaMallocManaged((void**)&base3_table, sizeof(int) * (1 << max_bits_count));
   for (int i = 0; i < (1 << max_bits_count); ++i) {
@@ -130,5 +131,5 @@ __host__ __device__ float Evaluator::eval(ull me, ull op) {
       op_r = rot90(op_r);
     }
   }
-  return score;
+  return score + offset;
 }
