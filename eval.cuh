@@ -11,6 +11,7 @@ class Evaluator {
   __host__ __device__ int get_index(const ull me, const ull op, const ull feature) const;
   size_t features_count;
   float **values;
+  float offset;
   ull *features;
   int *base3_table;
 };
