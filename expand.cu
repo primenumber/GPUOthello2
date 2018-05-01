@@ -39,27 +39,18 @@ bool operator<(const BoardWithValue& lhs, const BoardWithValue &rhs) {
   return lhs.score < rhs.score;
 }
 
-struct Result {
-  Result() = default;
-  Result(float score, bool reliable)
-    : score(score), reliable(reliable) {}
-  float score;
-  bool reliable;
-};
-
 template <NodeType type>
-Result expand_ybwc_impl(const ull player, const ull opponent,
+float expand_ybwc_impl(const ull player, const ull opponent,
     float alpha, const float beta,
     Table2 &table, const Evaluator &evaluator, const int max_depth,
-    std::unordered_map<int, std::vector<AlphaBetaProblem>> &tasks,
-    int level, bool passed_prev = false) {
+    std::vector<AlphaBetaProblem> &tasks, bool passed_prev = false) {
   if (stones_count(player, opponent)-4 == max_depth) {
     auto itr = table.find(std::make_pair(player, opponent));
     if (itr == std::end(table)) {
-      tasks[level].emplace_back(player, opponent, -64, 64);
-      return Result(evaluator.eval(player, opponent), false);
+      tasks.emplace_back(player, opponent, -64, 64);
+      return evaluator.eval(player, opponent);
     } else {
-      return Result(itr->second, true);
+      return itr->second;
     }
   }
   std::vector<BoardWithValue> children;
@@ -75,39 +66,32 @@ Result expand_ybwc_impl(const ull player, const ull opponent,
   std::sort(std::begin(children), std::end(children));
   bool first = true;
   float result = -std::numeric_limits<float>::infinity();
-  bool reliable = true;
   for (const auto &child : children) {
-    Result child_res;
+    float child_val;
     if (first) {
-      child_res = expand_ybwc_impl<first_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks, level);
+      child_val = -expand_ybwc_impl<first_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
       first = false;
-      if (type == NodeType::PV || type == NodeType::Cut) {
-        ++level;
-      }
     } else {
-      child_res = expand_ybwc_impl<other_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks, level);
+      child_val = -expand_ybwc_impl<other_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
     }
-    result = std::max(result, -child_res.score);
-    reliable = reliable && child_res.reliable;
+    result = std::max(result, child_val);
     alpha = std::max(alpha, result);
-    if (alpha >= beta) return Result(alpha, reliable);
+    if (alpha >= beta) return alpha;
   }
   if (first) {
     if (passed_prev) {
-      return Result(final_score(player, opponent), true);
+      return final_score(player, opponent);
     } else {
-      Result res = expand_ybwc_impl<first_child(type)>(opponent, player, -beta, -alpha, table, evaluator, max_depth, tasks, level, true);
-      return Result(-res.score, res.reliable);
+      return -expand_ybwc_impl<first_child(type)>(opponent, player, -beta, -alpha, table, evaluator, max_depth, tasks, true);
     }
   }
-  return Result(result, reliable);
+  return result;
 }
 
 float expand_ybwc(const ull player, const ull opponent,
     float alpha, const float beta,
     Table2 &table, const Evaluator &evaluator, const int max_depth,
-    std::unordered_map<int, std::vector<AlphaBetaProblem>> &tasks,
-    bool passed_prev) {
+    std::vector<AlphaBetaProblem> &tasks, bool passed_prev) {
   return expand_ybwc_impl<NodeType::PV>(player, opponent, alpha, beta,
-      table, evaluator, max_depth, tasks, 0, passed_prev).score;
+      table, evaluator, max_depth, tasks, passed_prev);
 }

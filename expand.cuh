@@ -20,5 +20,4 @@ using Table2 = std::unordered_map<std::pair<ull, ull>, int>;
 float expand_ybwc(const ull player, const ull opponent,
     float alpha, const float beta,
     Table2 &table, const Evaluator &evaluator, const int max_depth,
-    std::unordered_map<int, std::vector<AlphaBetaProblem>> &tasks,
-    bool passed_prev = false);
+    std::vector<AlphaBetaProblem> &tasks, bool passed_prev = false);

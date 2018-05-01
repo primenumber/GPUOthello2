@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
   Evaluator evaluator("subboard6x6.txt", "value6x6/value");
   Table table_cache = init_table();
   while (true) {
-    std::unordered_map<int, std::vector<AlphaBetaProblem>> tasks;
+    std::vector<AlphaBetaProblem> tasks;
     constexpr float INF = std::numeric_limits<float>::infinity();
     float score = expand_ybwc(black, white, -INF, INF, table, evaluator, max_depth, tasks);
     std::cout << tasks.size() << std::endl;
@@ -164,22 +164,17 @@ int main(int argc, char **argv) {
       std::cout << "Score: " << score << std::endl;
       break;
     }
-    for (int level = 0;; ++level) {
-      if (tasks[level].empty()) continue;
-      std::cout << "Level: " << level << ", size: " << tasks[level].size() << std::endl;
-      BatchedTask batched_task;
-      init_batch(batched_task, tasks[level].size(), 32 - max_depth, table_cache);
-      memcpy(batched_task.abp, tasks[level].data(), sizeof(AlphaBetaProblem) * tasks[level].size());
-      launch_batch(batched_task);
-      while (true) {
-        if (is_ready_batch(batched_task)) break;
-      }
-      for (std::size_t i = 0; i < tasks[level].size(); ++i) {
-        table[std::make_pair(tasks[level][i].player, tasks[level][i].opponent)] = batched_task.result[i];
-      }
-      destroy_batch(batched_task);
-      break;
+    BatchedTask batched_task;
+    init_batch(batched_task, tasks.size(), 32 - max_depth, table_cache);
+    memcpy(batched_task.abp, tasks.data(), sizeof(AlphaBetaProblem) * tasks.size());
+    launch_batch(batched_task);
+    while (true) {
+      if (is_ready_batch(batched_task)) break;
     }
+    for (std::size_t i = 0; i < tasks.size(); ++i) {
+      table[std::make_pair(tasks[i].player, tasks[i].opponent)] = batched_task.result[i];
+    }
+    destroy_batch(batched_task);
   }
   destroy_table(table_cache);
   return 0;
