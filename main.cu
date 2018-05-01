@@ -63,6 +63,7 @@ int main(int argc, char **argv) {
       for (std::size_t i = 0; i < tasks[level].size(); ++i) {
         table[std::make_pair(tasks[level][i].player, tasks[level][i].opponent)] = batched_task.result[i];
       }
+      destroy_batch(batched_task);
       break;
     }
   }
