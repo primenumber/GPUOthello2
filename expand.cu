@@ -39,6 +39,55 @@ bool operator<(const BoardWithValue& lhs, const BoardWithValue &rhs) {
   return lhs.score < rhs.score;
 }
 
+std::unordered_map<std::pair<ull, ull>, float> cache;
+
+template <NodeType type>
+float think(const ull player, const ull opponent,
+    float alpha, const float beta,
+    const Evaluator &evaluator, const int max_depth,
+    bool passed_prev = false) {
+  auto itr = cache.find(std::make_pair(player, opponent));
+  if (itr != std::end(cache)) {
+    return itr->second;
+  }
+  if (stones_count(player, opponent)-4 == max_depth) {
+    return evaluator.eval(player, opponent);
+  }
+  std::vector<BoardWithValue> children;
+  for (ull bits = mobility(player, opponent); bits; bits &= bits-1) {
+    const ull pos_bit = bits & -bits;
+    const int pos = __builtin_popcountll(pos_bit - 1);
+    const ull flip_bits = flip(player, opponent, pos);
+    const ull next_player = opponent ^ flip_bits;
+    const ull next_opponent = (player ^ flip_bits) | pos_bit;
+    const float value = evaluator.eval(next_player, next_opponent);
+    children.emplace_back(next_player, next_opponent, value);
+  }
+  std::sort(std::begin(children), std::end(children));
+  bool first = true;
+  float result = -std::numeric_limits<float>::infinity();
+  for (const auto &child : children) {
+    float child_val;
+    if (first) {
+      child_val = -think<first_child(type)>(child.player, child.opponent, -beta, -alpha, evaluator, max_depth);
+      first = false;
+    } else {
+      child_val = -think<other_child(type)>(child.player, child.opponent, -beta, -alpha, evaluator, max_depth);
+    }
+    result = std::max(result, child_val);
+    alpha = std::max(alpha, result);
+    if (alpha >= beta) return alpha;
+  }
+  if (first) {
+    if (passed_prev) {
+      return final_score(player, opponent);
+    } else {
+      return -think<first_child(type)>(opponent, player, -beta, -alpha, evaluator, max_depth, true);
+    }
+  }
+  return result;
+}
+
 template <NodeType type>
 float expand_ybwc_impl(const ull player, const ull opponent,
     float alpha, const float beta,
@@ -60,7 +109,9 @@ float expand_ybwc_impl(const ull player, const ull opponent,
     const ull flip_bits = flip(player, opponent, pos);
     const ull next_player = opponent ^ flip_bits;
     const ull next_opponent = (player ^ flip_bits) | pos_bit;
-    const float value = evaluator.eval(next_player, next_opponent);
+    constexpr float INF = std::numeric_limits<float>::infinity();
+    const float value = think<NodeType::PV>(next_player, next_opponent, -INF, INF, evaluator, max_depth);
+    cache[std::make_pair(next_player, next_opponent)] = value;
     children.emplace_back(next_player, next_opponent, value);
   }
   std::sort(std::begin(children), std::end(children));
