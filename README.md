@@ -10,8 +10,10 @@ solve 6x6 board version
 
 ```
 $ mkdir value6x6
-$ wget https://drive.google.com/file/d/1-F-y8YbwOIC3jsFn1GBBat4y-FzHkYqN/view?usp=sharing -o value6x6/value16_b
 ```
+
+Download value table file from https://drive.google.com/file/d/1-F-y8YbwOIC3jsFn1GBBat4y-FzHkYqN/view?usp=sharing and save to value6x6/value16\_b
+
 
 ### Run
 
