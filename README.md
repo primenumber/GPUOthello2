@@ -179,31 +179,6 @@ Score: -4
 $
 ```
 
-### INPUT
-
-Input file path
-
-#### Input file format
-
-```
-n
-board 1
-board 2
-...
-board n
-```
-
-each board format is base81
-for detail: https://github.com/primenumber/issen
-
-### OUTPUT
-
-Output file path
-
-### DEPTH
-
-Maximum search depth (without pass), equal to maximum number of empty position
-
 ## LICENSE
 
 GPLv3
