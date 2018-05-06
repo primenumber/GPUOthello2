@@ -39,7 +39,7 @@ void think(char **argv) {
   FILE *fp_out = fopen(argv[2], "w");
   int max_depth = std::stoi(argv[3]);
   int depth = std::stoi(argv[4]);
-  Evaluator evaluator("subboard.txt", "lsval/lsval_52_b");
+  Evaluator evaluator("subboard.txt", "value/value52");
   int n;
   fscanf(fp_in, "%d", &n);
   std::vector<std::string> vboard(n);
