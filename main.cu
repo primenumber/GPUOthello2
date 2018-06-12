@@ -132,7 +132,7 @@ int main(int argc, char **argv) {
   vboard.erase(std::unique(std::begin(vboard), std::end(vboard)), std::end(vboard));
   n = vboard.size();
   fprintf(stderr, "n = %d\n", n);
-  constexpr size_t batch_size = 8192;
+  constexpr size_t batch_size = 2000000;
   size_t batch_count = (n + batch_size - 1) / batch_size;
   std::vector<Batch> vb(batch_count);
   Table table;
