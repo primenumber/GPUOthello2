@@ -154,18 +154,12 @@ int main(int argc, char **argv) {
   ull white = UINT64_C(0x0000001008000000);
   Table2 table;
   Evaluator evaluator("subboard6x6.txt", "value6x6/value16_b");
-  std::vector<Evaluator> evaluators;
-  evaluators.emplace_back("subboard6x6.txt", "value6x6/value16_b");
-  evaluators.emplace_back("subboard6x6.txt", "value6x6/value17_b");
-  evaluators.emplace_back("subboard6x6.txt", "value6x6/value18_b");
-  evaluators.emplace_back("subboard6x6.txt", "value6x6/value19_b");
-  evaluators.emplace_back("subboard6x6.txt", "value6x6/value20_b");
   Table table_cache = init_table();
   while (true) {
     std::cout << "collect tasks..." << std::endl;
     std::vector<AlphaBetaProblem> tasks;
     constexpr float INF = std::numeric_limits<float>::infinity();
-    float score = expand_ybwc(black, white, -INF, INF, table, evaluators, max_depth, tasks);
+    float score = expand_ybwc(black, white, -INF, INF, table, evaluator, max_depth, tasks);
     std::cout << "num = " << tasks.size() << std::endl;
     if (tasks.empty()) {
       std::cout << "Score: " << score << std::endl;
