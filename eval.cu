@@ -8,6 +8,13 @@ __host__ int pow3(int x) {
   return 3 * pow3(x-1);
 }
 
+__host__ ull mirror_under8(ull x) {
+  x = (x >> 4) | ((x << 4) & 0xF);
+  x = ((x >> 2) & 0x33) | ((x << 2) & 0xCC);
+  x = ((x >> 1) & 0x55) | ((x << 1) & 0xAA);
+  return x;
+}
+
 __host__ Evaluator::Evaluator(const std::string &features_file_name, const std::string &values_file_name) {
   std::ifstream features_stream(features_file_name);
   features_stream >> features_count;
@@ -17,7 +24,7 @@ __host__ Evaluator::Evaluator(const std::string &features_file_name, const std::
     for (size_t j = 0; j < 8; ++j) {
       std::bitset<8> bs;
       features_stream >> bs;
-      feature |= bs.to_ullong() << (j*8);
+      feature |= mirror_under8(bs.to_ullong()) << (j*8);
     }
     features[i] = feature;
   }
