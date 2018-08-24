@@ -53,6 +53,15 @@ __host__ Evaluator::Evaluator(const std::string &features_file_name, const std::
   }
 }
 
+__host__ Evaluator::~Evaluator() {
+  cudaFree(features);
+  for (size_t i = 0; i < features_count; ++i) {
+    cudaFree(values[i]);
+  }
+  cudaFree(values);
+  cudaFree(base3_table);
+}
+
 __host__ __device__ ull parallel_bit_extract(ull x, ull mask) {
 #ifdef __CUDA_ARCH__
   ull res = 0;
