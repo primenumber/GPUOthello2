@@ -24,7 +24,7 @@ __host__ Evaluator::Evaluator(const std::string &features_file_name, const std::
     for (size_t j = 0; j < 8; ++j) {
       std::bitset<8> bs;
       features_stream >> bs;
-      feature |= mirror_under8(bs.to_ullong()) << (j*8);
+      feature |= bs.to_ullong() << (j*8);
     }
     features[i] = feature;
   }
