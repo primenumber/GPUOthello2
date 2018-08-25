@@ -183,32 +183,32 @@ class UpperNode {
   __device__ UpperNode move(ull bits, ull pos_bit, Table table) const {
     ull next_player = opponent ^ bits;
     ull next_opponent = (player ^ bits) | pos_bit;
-    Entry entry = table.find(next_player, next_opponent);
-    if (entry.enable) {
-      char next_alpha = max(-beta, entry.lower);
-      char next_beta = min(-alpha, entry.upper);
-      if (next_alpha >= next_beta) {
-        return UpperNode(next_player, next_opponent, next_beta, next_alpha, next_beta);
-      } else {
-        return UpperNode(next_player, next_opponent, -64, next_alpha, next_beta);
-      }
-    } else {
+    //Entry entry = table.find(next_player, next_opponent);
+    //if (entry.enable) {
+    //  char next_alpha = max(-beta, entry.lower);
+    //  char next_beta = min(-alpha, entry.upper);
+    //  if (next_alpha >= next_beta) {
+    //    return UpperNode(next_player, next_opponent, next_beta, next_alpha, next_beta);
+    //  } else {
+    //    return UpperNode(next_player, next_opponent, -64, next_alpha, next_beta);
+    //  }
+    //} else {
       return UpperNode(next_player, next_opponent, -64, -beta, -alpha);
-    }
+    //}
   }
   __device__ UpperNode pass(Table table) const {
     Entry entry = table.find(opponent, player);
-    if (entry.enable) {
-      char next_alpha = max(-beta, entry.lower);
-      char next_beta = min(-alpha, entry.upper);
-      if (next_alpha >= next_beta) {
-        return UpperNode(opponent, player, next_beta, next_alpha, next_beta, true);
-      } else {
-        return UpperNode(opponent, player, -64, next_alpha, next_beta, true);
-      }
-    } else {
+    //if (entry.enable) {
+    //  char next_alpha = max(-beta, entry.lower);
+    //  char next_beta = min(-alpha, entry.upper);
+    //  if (next_alpha >= next_beta) {
+    //    return UpperNode(opponent, player, next_beta, next_alpha, next_beta, true);
+    //  } else {
+    //    return UpperNode(opponent, player, -64, next_alpha, next_beta, true);
+    //  }
+    //} else {
       return UpperNode(opponent, player, -64, -beta, -alpha, true);
-    }
+    //}
   }
   __device__ void commit(char score) {
     result = max(result, score);
@@ -246,7 +246,7 @@ __device__ bool Solver::next_game() {
 __device__ void Solver::commit_upper() {
   UpperNode &parent = upper_stack[stack_index-1];
   UpperNode &node = upper_stack[stack_index];
-  table.update(node.player_pos(), node.opponent_pos(), node.beta, node.start_alpha, node.result);
+  //table.update(node.player_pos(), node.opponent_pos(), node.beta, node.start_alpha, node.result);
   parent.commit(node.passed() ? node.result: -node.result);
   stack_index--;
 }
