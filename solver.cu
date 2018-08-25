@@ -535,7 +535,7 @@ void init_batch(BatchedTask &bt, size_t batch_size, size_t max_depth, const Tabl
   *bt.total = 0;
   bt.table = table;
   bt.size = batch_size;
-  bt.grid_size = (batch_size + chunk_size - 1) / chunk_size;
+  bt.grid_size = std::max((size_t)64, (batch_size + chunk_size - 1) / chunk_size);
   bt.max_depth = max_depth;
   size_t upper_stack_size = max(1ul, bt.max_depth - lower_stack_depth);
   cudaMalloc((void**)&bt.upper_stacks, sizeof(UpperNode) * bt.grid_size * nodesPerBlock * upper_stack_size);
@@ -570,7 +570,7 @@ void init_batch(BatchedThinkTask &bt, size_t batch_size, size_t depth, const Tab
   bt.table = table;
   bt.evaluator = evaluator;
   bt.size = batch_size;
-  bt.grid_size = (batch_size + chunk_size - 1) / chunk_size;
+  bt.grid_size = std::max((size_t)64, (batch_size + chunk_size - 1) / chunk_size);
   bt.depth = depth;
 }
 
