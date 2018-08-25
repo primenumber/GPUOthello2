@@ -60,7 +60,7 @@ float think(const ull player, const ull opponent,
     const ull flip_bits = flip(player, opponent, pos);
     const ull next_player = opponent ^ flip_bits;
     const ull next_opponent = (player ^ flip_bits) | pos_bit;
-    const float value = evaluator.eval(next_player, next_opponent);
+    const float value = mobility_count(next_player, next_opponent);
     children.emplace_back(next_player, next_opponent, value);
   }
   std::sort(std::begin(children), std::end(children));
