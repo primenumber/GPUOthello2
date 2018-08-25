@@ -138,6 +138,7 @@ void make_prob(std::size_t depth, std::size_t count) {
 int main(int argc, char **argv) {
   if (argc < 2) {
     std::cerr << "Usage: " << argv[0] << " YBWC_DEPTH" << std::endl;
+    return EXIT_FAILURE;
   }
   char *ptr = nullptr;
   size_t max_depth = std::strtoul(argv[1], &ptr, 10);
