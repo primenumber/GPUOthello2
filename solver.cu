@@ -235,7 +235,7 @@ __shared__ unsigned int index_shared;
 
 __device__ bool Solver::next_game() {
   UpperNode &node = upper_stack[0];
-  result[index] = node.result;
+  result[index] = node.passed() ? -node.result : node.result;
   index = atomicAdd(&index_shared, gridDim.x);
   if (index < count) {
     upper_stack[0] = UpperNode(abp[index].player, abp[index].opponent, -64, abp[index].alpha, abp[index].beta);
