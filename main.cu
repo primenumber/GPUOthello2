@@ -157,13 +157,13 @@ int main(int argc, char **argv) {
   Evaluator evaluator("subboard6x6.txt", "value6x6/value16_b");
   Table table_cache = init_table();
   while (true) {
-    std::cout << "collect tasks..." << std::endl;
+    std::cerr << "collect tasks..." << std::endl;
     std::vector<AlphaBetaProblem> tasks;
     constexpr float INF = std::numeric_limits<float>::infinity();
     float score = expand_ybwc(black, white, -INF, INF, table, evaluator, max_depth, tasks);
-    std::cout << "num = " << tasks.size() << std::endl;
+    std::cerr << "num = " << tasks.size() << std::endl;
     if (tasks.empty()) {
-      std::cout << "Score: " << score << std::endl;
+      std::cerr << "Score: " << score << std::endl;
       break;
     }
     BatchedTask batched_task;
