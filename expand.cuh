@@ -15,7 +15,8 @@ struct hash<pair<ull, ull>> {
 };
 }
 
-using Table2 = std::unordered_map<std::pair<ull, ull>, int>;
+// (me, op), (lower, upper)
+using Table2 = std::unordered_map<std::pair<ull, ull>, std::pair<int, int>>;
 
 float expand_ybwc(const ull player, const ull opponent,
     float alpha, const float beta,

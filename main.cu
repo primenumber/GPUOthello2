@@ -174,7 +174,31 @@ int main(int argc, char **argv) {
       if (is_ready_batch(batched_task)) break;
     }
     for (std::size_t i = 0; i < tasks.size(); ++i) {
-      table[std::make_pair(tasks[i].player, tasks[i].opponent)] = batched_task.result[i];
+      auto bd = std::make_pair(tasks[i].player, tasks[i].opponent);
+      auto result = batched_task.result[i];
+      std::cout << to_base81(bd.first, bd.second)
+        << ' ' << tasks[i].alpha << ' ' << tasks[i].beta
+        << ' ' << result << std::endl;
+      auto itr = table.find(bd);
+      if (itr == std::end(table)) {
+        if (result <= tasks[i].alpha) {
+          table[bd] = std::make_pair(-64, result);
+        } else if (result >= tasks[i].beta) {
+          table[bd] = std::make_pair(result, 64);
+        } else {
+          table[bd] = std::make_pair(result, result);
+        }
+      } else {
+        int lower, upper;
+        std::tie(lower, upper) = itr->second;
+        if (result <= tasks[i].alpha) {
+          table[bd] = std::make_pair(std::max(-64, lower), std::min(result, upper));
+        } else if (result >= tasks[i].beta) {
+          table[bd] = std::make_pair(std::max(result, lower), std::min(64, upper));
+        } else {
+          table[bd] = std::make_pair(std::max(result, lower), std::min(result, upper));
+        }
+      }
     }
     destroy_batch(batched_task);
   }

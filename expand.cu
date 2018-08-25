@@ -39,17 +39,19 @@ bool operator<(const BoardWithValue& lhs, const BoardWithValue &rhs) {
   return lhs.score < rhs.score;
 }
 
-std::unordered_map<std::pair<ull, ull>, float> cache;
+std::unordered_map<std::pair<ull, ull>, std::pair<float, float>> cache;
 
 template <NodeType type>
 float think(const ull player, const ull opponent,
+    float alpha, float beta,
+    const Evaluator &evaluator, const int max_depth,
+    bool passed_prev = false);
+
+template <NodeType type>
+float think_impl(const ull player, const ull opponent,
     float alpha, const float beta,
     const Evaluator &evaluator, const int max_depth,
     bool passed_prev = false) {
-  auto itr = cache.find(std::make_pair(player, opponent));
-  if (itr != std::end(cache)) {
-    return itr->second;
-  }
   if (stones_count(player, opponent)-4 == max_depth) {
     return evaluator.eval(player, opponent);
   }
@@ -89,17 +91,81 @@ float think(const ull player, const ull opponent,
 }
 
 template <NodeType type>
-float expand_ybwc_impl(const ull player, const ull opponent,
+float think(const ull player, const ull opponent,
+    float alpha, float beta,
+    const Evaluator &evaluator, const int max_depth,
+    bool passed_prev) {
+  std::pair<ull, ull> bd(player, opponent);
+  auto itr = cache.find(bd);
+  if (itr != std::end(cache)) {
+    float lower, upper;
+    std::tie(lower, upper) = itr->second;
+    if (lower == upper) {
+      return lower;
+    }
+    alpha = std::max(alpha, lower);
+    beta = std::min(beta, upper);
+    if (alpha >= beta) {
+      return std::min(alpha, upper);
+    }
+  }
+  float val = think_impl<type>(player, opponent, alpha, beta,
+      evaluator, max_depth, passed_prev);
+  itr = cache.find(bd);
+  if (itr != std::end(cache)) {
+    float lower, upper;
+    std::tie(lower, upper) = itr->second;
+    if (val <= alpha) {
+      cache[bd] = std::make_pair(lower, std::min(upper, val));
+    } else if (val >= beta) {
+      cache[bd] = std::make_pair(std::max(lower, val), upper);
+    } else {
+      cache[bd] = std::make_pair(val, val);
+    }
+  } else {
+    if (val <= alpha) {
+      cache[bd] = std::make_pair(-64.0, val);
+    } else if (val >= beta) {
+      cache[bd] = std::make_pair(val, 64.0);
+    } else {
+      cache[bd] = std::make_pair(val, val);
+    }
+  }
+  return val;
+}
+
+template <NodeType type>
+std::tuple<float, bool> expand_ybwc_top(const ull player, const ull opponent,
+    float alpha, float beta,
+    Table2 &table, const Evaluator &evaluator, const int max_depth,
+    std::vector<AlphaBetaProblem> &tasks, bool passed_prev = false);
+
+template <NodeType type>
+std::tuple<float, bool> expand_ybwc_impl(const ull player, const ull opponent,
     float alpha, const float beta,
     Table2 &table, const Evaluator &evaluator, const int max_depth,
     std::vector<AlphaBetaProblem> &tasks, bool passed_prev = false) {
   if (stones_count(player, opponent)-4 == max_depth) {
     auto itr = table.find(std::make_pair(player, opponent));
     if (itr == std::end(table)) {
-      tasks.emplace_back(player, opponent, -64, 64);
-      return evaluator.eval(player, opponent);
+      tasks.emplace_back(player, opponent,
+          std::max(-64.0f, floor(alpha)),
+          std::min(64.0f, ceil(beta)));
+      return std::make_tuple(evaluator.eval(player, opponent), false);
+    } else if (itr->second.first == itr->second.second) {
+      return std::make_tuple(itr->second.first, true);
     } else {
-      return itr->second;
+      int lower, upper;
+      std::tie(lower, upper) = itr->second;
+      float new_alpha = std::max(alpha, (float)lower);
+      float new_beta = std::min(beta, (float)upper);
+      if (new_alpha >= new_beta) {
+        return std::make_tuple(std::min(new_alpha, (float)upper), true);
+      }
+      tasks.emplace_back(player, opponent,
+          std::max(-64.0f, floor(new_alpha)),
+          std::min(64.0f, ceil(new_beta)));
+      return std::make_tuple(evaluator.eval(player, opponent), false);
     }
   }
   std::vector<BoardWithValue> children;
@@ -111,38 +177,92 @@ float expand_ybwc_impl(const ull player, const ull opponent,
     const ull next_opponent = (player ^ flip_bits) | pos_bit;
     constexpr float INF = std::numeric_limits<float>::infinity();
     const float value = think<NodeType::PV>(next_player, next_opponent, -INF, INF, evaluator, max_depth);
-    cache[std::make_pair(next_player, next_opponent)] = value;
     children.emplace_back(next_player, next_opponent, value);
   }
   std::sort(std::begin(children), std::end(children));
   bool first = true;
   float result = -std::numeric_limits<float>::infinity();
+  bool exact = true;
   for (const auto &child : children) {
-    float child_val;
+    std::tuple<float, bool> child_val;
     if (first) {
-      child_val = -expand_ybwc_impl<first_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
+      child_val = expand_ybwc_top<first_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
       first = false;
     } else {
-      child_val = -expand_ybwc_impl<other_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
+      child_val = expand_ybwc_top<other_child(type)>(child.player, child.opponent, -beta, -alpha, table, evaluator, max_depth, tasks);
     }
-    result = std::max(result, child_val);
+    result = std::max(result, -std::get<0>(child_val));
+    if (!std::get<1>(child_val)) exact = false;
     alpha = std::max(alpha, result);
-    if (alpha >= beta) return alpha;
+    if (alpha >= beta) return std::make_tuple(alpha, exact);
   }
   if (first) {
     if (passed_prev) {
-      return final_score(player, opponent);
+      return std::make_tuple(final_score(player, opponent), true);
     } else {
-      return -expand_ybwc_impl<first_child(type)>(opponent, player, -beta, -alpha, table, evaluator, max_depth, tasks, true);
+      float val;
+      bool exact;
+      std::tie(val, exact) = expand_ybwc_top<first_child(type)>(opponent, player, -beta, -alpha, table, evaluator, max_depth, tasks, true);
+      return std::make_tuple(-val, exact);
     }
   }
-  return result;
+  return std::make_tuple(result, exact);
+}
+
+template <NodeType type>
+std::tuple<float, bool> expand_ybwc_top(const ull player, const ull opponent,
+    float alpha, float beta,
+    Table2 &table, const Evaluator &evaluator, const int max_depth,
+    std::vector<AlphaBetaProblem> &tasks, bool passed_prev) {
+  std::pair<ull, ull> bd(player, opponent);
+  auto itr = table.find(bd);
+  float val;
+  bool exact;
+  if (itr == std::end(table)) {
+    std::tie(val, exact) = expand_ybwc_impl<type>(player, opponent, alpha, beta,
+        table, evaluator, max_depth, tasks, passed_prev);
+  } else if (itr->second.first == itr->second.second) {
+    return std::make_tuple(itr->second.first, true);
+  } else {
+    int lower, upper;
+    std::tie(lower, upper) = itr->second;
+    alpha = std::max(alpha, (float)lower);
+    beta = std::min(beta, (float)upper);
+    if (alpha >= beta) {
+      return std::make_tuple(std::min(alpha, (float)upper), true);
+    }
+    std::tie(val, exact) = expand_ybwc_impl<type>(player, opponent, alpha, beta,
+        table, evaluator, max_depth, tasks, passed_prev);
+  }
+  if (exact) {
+    auto itr = table.find(bd);
+    if (itr == std::end(table)) {
+      if (val <= alpha) {
+        table[bd] = std::make_pair(-64, val);
+      } else if (val >= beta) {
+        table[bd] = std::make_pair(val, 64);
+      } else {
+        table[bd] = std::make_pair(val, val);
+      }
+    } else {
+      int lower, upper;
+      std::tie(lower, upper) = itr->second;
+      if (val <= alpha) {
+        table[bd] = std::make_pair(std::max(-64, lower), std::min((int)val, upper));
+      } else if (val >= beta) {
+        table[bd] = std::make_pair(std::max((int)val, lower), std::min(64, upper));
+      } else {
+        table[bd] = std::make_pair(std::max((int)val, lower), std::min((int)val, upper));
+      }
+    }
+  }
+  return std::make_tuple(val, exact);
 }
 
 float expand_ybwc(const ull player, const ull opponent,
     float alpha, const float beta,
     Table2 &table, const Evaluator &evaluator, const int max_depth,
     std::vector<AlphaBetaProblem> &tasks, bool passed_prev) {
-  return expand_ybwc_impl<NodeType::PV>(player, opponent, alpha, beta,
-      table, evaluator, max_depth, tasks, passed_prev);
+  return std::get<0>(expand_ybwc_top<NodeType::PV>(player, opponent, alpha, beta,
+      table, evaluator, max_depth, tasks, passed_prev));
 }
