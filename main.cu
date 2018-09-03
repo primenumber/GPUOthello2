@@ -1,4 +1,5 @@
 #include "solver.cuh"
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -166,6 +167,9 @@ int main(int argc, char **argv) {
       std::cerr << "Score: " << score << std::endl;
       break;
     }
+    std::sort(std::begin(tasks), std::end(tasks));
+    tasks.erase(std::unique(std::begin(tasks), std::end(tasks)), std::end(tasks));
+    std::cerr << "true num = " << tasks.size() << std::endl;
     BatchedTask batched_task;
     init_batch(batched_task, tasks.size(), 32 - max_depth, table_cache);
     memcpy(batched_task.abp, tasks.data(), sizeof(AlphaBetaProblem) * tasks.size());

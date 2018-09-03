@@ -7,6 +7,29 @@
 // parameters
 constexpr int lower_stack_depth = 9;
 
+__host__ __device__ bool operator<(
+    const AlphaBetaProblem &lhs, const AlphaBetaProblem &rhs) {
+  if (lhs.player == rhs.player) {
+    if (lhs.opponent == rhs.opponent) {
+      if (lhs.alpha == rhs.alpha) {
+        return lhs.beta < rhs.beta;
+      } else {
+        return lhs.alpha < rhs.alpha;
+      }
+    } else {
+      return lhs.opponent < rhs.opponent;
+    }
+  } else {
+    return lhs.player < rhs.player;
+  }
+}
+
+__host__ __device__ bool operator==(
+    const AlphaBetaProblem &lhs, const AlphaBetaProblem &rhs) {
+  return lhs.player == rhs.player && lhs.opponent == rhs.opponent
+    && lhs.alpha == rhs.alpha && lhs.beta == rhs.beta;
+}
+
 class MobilityGenerator {
  public:
   __device__ MobilityGenerator() {}

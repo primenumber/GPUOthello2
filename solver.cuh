@@ -18,6 +18,11 @@ struct AlphaBetaProblem {
   int beta;
 };
 
+__host__ __device__ bool operator<(
+    const AlphaBetaProblem &, const AlphaBetaProblem &);
+__host__ __device__ bool operator==(
+    const AlphaBetaProblem &, const AlphaBetaProblem &);
+
 class UpperNode;
 
 struct BatchedTask {
