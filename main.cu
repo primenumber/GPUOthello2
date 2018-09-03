@@ -43,11 +43,14 @@ void solve_parallel(const std::string &in, const std::string &out) {
   Table table = init_table();
   BatchedTask bt;
   init_batch(bt, n, depth, table);
+  std::vector<std::tuple<int, int, int>> vt;
   for (std::size_t i = 0; i < n; ++i) {
-    ifs >> prob_str[i];
+    int a, b, r;
+    ifs >> prob_str[i] >> a >> b >> r;
     ull player, opponent;
     std::tie(player, opponent) = toBoard(prob_str[i].c_str());
     bt.abp[i] = AlphaBetaProblem(player, opponent, -64, 64);
+    vt.emplace_back(a, b, r);
   }
   launch_batch(bt);
   while (true) {
@@ -56,6 +59,27 @@ void solve_parallel(const std::string &in, const std::string &out) {
   std::ofstream ofs(out);
   ofs << n << std::endl;
   for (std::size_t i = 0; i < n; ++i) {
+    int a, b, r;
+    std::tie(a, b, r) = vt[i];
+    bool ok = true;
+    if (r <= a) {
+      if (r < bt.result[i] || bt.result[i] > a) {
+        ok = false;
+      }
+    } else if (r >= b) {
+      if (r > bt.result[i] || bt.result[i] < b) {
+        ok = false;
+      }
+    } else {
+      if (r != bt.result[i]) {
+        ok = false;
+      }
+    }
+    if (!ok) {
+      std::cout << "Err: " << prob_str[i] << ' '
+        << a << ' ' << b << ' ' << r << ' '
+        << bt.result[i] << std::endl;
+    }
     ofs << prob_str[i] << ' ' << bt.result[i] << std::endl;
   }
   destroy_batch(bt);
@@ -180,9 +204,9 @@ int main(int argc, char **argv) {
     for (std::size_t i = 0; i < tasks.size(); ++i) {
       auto bd = std::make_pair(tasks[i].player, tasks[i].opponent);
       auto result = batched_task.result[i];
-      std::cout << to_base81(bd.first, bd.second)
-        << ' ' << tasks[i].alpha << ' ' << tasks[i].beta
-        << ' ' << result << std::endl;
+      //std::cout << to_base81(bd.first, bd.second)
+      //  << ' ' << tasks[i].alpha << ' ' << tasks[i].beta
+      //  << ' ' << result << std::endl;
       auto itr = table.find(bd);
       if (itr == std::end(table)) {
         if (result <= tasks[i].alpha) {
