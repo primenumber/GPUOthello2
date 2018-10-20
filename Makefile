@@ -15,7 +15,7 @@ solver: $(OBJS)
 	$(NVCC) $(NVCCOPT) -c $< -o $@
 
 %.o : %.cpp
-	gcc-5 $(CXXOPT) -c $< -o $@
+	gcc-7 $(CXXOPT) -c $< -o $@
 
 %.cubin : %.cu
 	$(NVCC) -cubin $(NVCCOPT) -c $< -o $@
