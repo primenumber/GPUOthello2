@@ -138,5 +138,5 @@ __host__ __device__ float Evaluator::eval(ull me, ull op) {
     me_r = rot90(me_r);
     op_r = rot90(op_r);
   }
-  return score + offset;
+  return min(64.0, max(-64.0, score + offset));
 }
