@@ -1,6 +1,7 @@
 #include "eval.cuh"
 #include <bitset>
 #include <fstream>
+#include <memory>
 #include "eval_host.hpp"
 
 __host__ int pow3(int x) {
@@ -30,9 +31,15 @@ __host__ Evaluator::Evaluator(const std::string &features_file_name, const std::
     max_bits_count = std::max(max_bits_count, bits_count);
     int length = pow3(bits_count);
     cudaMallocManaged((void**)&values[i], sizeof(float) * length);
-    values_stream.read((char*)values[i], sizeof(float) * length);
+    const auto buf = std::make_unique<double[]>(length);
+    values_stream.read((char*)buf.get(), sizeof(double) * length);
+    for (size_t j = 0; j < length; ++j) {
+      values[i][j] = buf[j];
+    }
   }
-  values_stream.read((char*)&offset, sizeof(float));
+  double tmp = 0;
+  values_stream.read((char*)&tmp, sizeof(double));
+  offset = tmp;
 
   cudaMallocManaged((void**)&base3_table, sizeof(int) * (1 << max_bits_count));
   for (int i = 0; i < (1 << max_bits_count); ++i) {
