@@ -127,9 +127,9 @@ __host__ __device__ float Evaluator::eval(ull me, ull op) {
       score += values_j[get_index(me_r, op_r, features[j])];
       score += values_j[get_index(flipDiag(me_r), flipDiag(op_r), features[j])];
 #endif
-      me_r = rot90(me_r);
-      op_r = rot90(op_r);
     }
+    me_r = rot90(me_r);
+    op_r = rot90(op_r);
   }
   return score + offset;
 }
