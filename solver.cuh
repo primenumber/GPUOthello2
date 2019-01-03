@@ -19,6 +19,7 @@ struct AlphaBetaProblem {
 };
 
 class UpperNode;
+class ThinkerNode;
 
 struct BatchedTask {
   cudaStream_t *str;
@@ -35,6 +36,7 @@ struct BatchedTask {
 struct BatchedThinkTask {
   cudaStream_t *str;
   AlphaBetaProblem *abp;
+  ThinkerNode *thinker_stacks;
   Table table;
   Evaluator evaluator;
   int *result;

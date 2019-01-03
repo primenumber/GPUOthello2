@@ -6,6 +6,7 @@
 
 // parameters
 constexpr int lower_stack_depth = 9;
+constexpr int think_lower_stack_depth = 2;
 
 class MobilityGenerator {
  public:
@@ -351,11 +352,12 @@ __device__ int Solver::solve_all() {
 __global__ void alpha_beta_kernel(
     const AlphaBetaProblem * const abp, int * const result, UpperNode * const upper_stack,
     size_t count, size_t upper_stack_size, Table table, ull * const nodes_total) {
+  int index_global = blockIdx.x * blockDim.x + threadIdx.x;
   index_shared = blockIdx.x;
   __syncthreads();
   size_t index = atomicAdd(&index_shared, gridDim.x);
   if (index < count) {
-    UpperNode *ustack = upper_stack + index * upper_stack_size;
+    UpperNode *ustack = upper_stack + index_global * upper_stack_size;
     const AlphaBetaProblem &problem = abp[index];
     Solver solver = {
       0, // stack_index
@@ -373,8 +375,97 @@ __global__ void alpha_beta_kernel(
   }
 }
 
+class ThinkerNode {
+ public:
+  static constexpr int max_mobility_count = 46;
+  __device__ ThinkerNode(ull player, ull opponent, char result, char alpha, char beta, bool pass = false)
+      : player(player), opponent(opponent), possize(0), index(0),
+      result(result), start_alpha(alpha), alpha(alpha), beta(beta), prev_passed(pass) {
+    MobilityGenerator mg(player, opponent);
+    char cntary[max_mobility_count];
+    while(!mg.completed()) {
+      ull next_bit = mg.next_bit();
+      int pos = __popcll(next_bit - 1);
+      ull flip_bits = flip(player, opponent, pos);
+      if (flip_bits) {
+        cntary[possize] = mobility_count(opponent ^ flip_bits, (player ^ flip_bits) | next_bit);
+        posary[possize++] = pos;
+      }
+    }
+    thrust::sort_by_key(thrust::seq, cntary, cntary + possize, posary);
+  }
+  ThinkerNode& operator=(const ThinkerNode &) = default;
+  __device__ bool completed() const {
+    return index == possize;
+  }
+  __device__ int pop() {
+    return posary[index++];
+  }
+  __device__ int size() const {
+    return possize;
+  }
+  __device__ ull player_pos() const {
+    return player;
+  }
+  __device__ ull opponent_pos() const {
+    return opponent;
+  }
+  __device__ bool passed() const {
+    return prev_passed;
+  }
+  __device__ int score() const {
+    return final_score(player, opponent);
+  }
+  __device__ ThinkerNode move(ull bits, ull pos_bit, Table table) const {
+    ull next_player = opponent ^ bits;
+    ull next_opponent = (player ^ bits) | pos_bit;
+    //Entry entry = table.find(next_player, next_opponent);
+    //if (entry.enable) {
+    //  char next_alpha = max(-beta, entry.lower);
+    //  char next_beta = min(-alpha, entry.upper);
+    //  if (next_alpha >= next_beta) {
+    //    return UpperNode(next_player, next_opponent, next_beta, next_alpha, next_beta);
+    //  } else {
+    //    return UpperNode(next_player, next_opponent, -64, next_alpha, next_beta);
+    //  }
+    //} else {
+      return ThinkerNode(next_player, next_opponent, -64, -beta, -alpha);
+    //}
+  }
+  __device__ ThinkerNode pass(Table table) const {
+    Entry entry = table.find(opponent, player);
+    //if (entry.enable) {
+    //  char next_alpha = max(-beta, entry.lower);
+    //  char next_beta = min(-alpha, entry.upper);
+    //  if (next_alpha >= next_beta) {
+    //    return UpperNode(opponent, player, next_beta, next_alpha, next_beta, true);
+    //  } else {
+    //    return UpperNode(opponent, player, -64, next_alpha, next_beta, true);
+    //  }
+    //} else {
+      return ThinkerNode(opponent, player, -64, -beta, -alpha, true);
+    //}
+  }
+  __device__ void commit(char score) {
+    result = max(result, score);
+    alpha = max(alpha, result);
+  }
+  char result;
+  char start_alpha;
+  char alpha;
+  char beta;
+ private:
+  ull player, opponent;
+  char posary[max_mobility_count];
+  char possize;
+  char index;
+  bool prev_passed;
+};
+
 struct Thinker {
   int stack_index;
+  ThinkerNode * const thinker_stack;
+  const size_t thinker_stack_size;
   ull leaf_me, leaf_op;
   const size_t stack_size;
   const AlphaBetaProblem * const abp;
@@ -387,24 +478,35 @@ struct Thinker {
   __device__ Node& get_node();
   __device__ Node& get_next_node();
   __device__ Node& get_parent_node();
+  __device__ void pass_upper();
   __device__ void pass();
   __device__ bool next_game();
   __device__ void commit();
   __device__ bool commit_or_next();
+  __device__ void commit_lower_impl();
+  __device__ void commit_to_upper();
+  __device__ void commit_lower();
   __device__ void commit_from_leaf(int);
+  __device__ bool think_upper();
+  __device__ void think_lower();
   __device__ int think();
 };
 
 __device__ Node& Thinker::get_node() {
-  return nodes_stack[threadIdx.x + stack_index * blockDim.x];
+  return nodes_stack[threadIdx.x + (stack_index - thinker_stack_size) * blockDim.x];
 }
 
 __device__ Node& Thinker::get_next_node() {
-  return nodes_stack[threadIdx.x + (stack_index + 1) * blockDim.x];
+  return nodes_stack[threadIdx.x + (stack_index + 1 - thinker_stack_size) * blockDim.x];
 }
 
 __device__ Node& Thinker::get_parent_node() {
-  return nodes_stack[threadIdx.x + (stack_index - 1) * blockDim.x];
+  return nodes_stack[threadIdx.x + (stack_index - 1 - thinker_stack_size) * blockDim.x];
+}
+
+__device__ void Thinker::pass_upper() {
+  ThinkerNode& node = thinker_stack[stack_index];
+  node = node.pass(table);
 }
 
 __device__ void Thinker::pass() {
@@ -418,20 +520,20 @@ __device__ void Thinker::pass() {
 }
 
 __device__ bool Thinker::next_game() {
-  Node &node = get_node();
-  result[index] = node.result;
+  ThinkerNode &node = thinker_stack[0];
+  result[index] = node.passed() ? -node.result : node.result;
   index = atomicAdd(&index_shared, gridDim.x);
   if (index < count) {
-    node = Node(MobilityGenerator(abp[index].player, abp[index].opponent), abp[index].alpha, abp[index].beta);
+    thinker_stack[0] = ThinkerNode(abp[index].player, abp[index].opponent, -64, abp[index].alpha, abp[index].beta);
   }
   return index < count;
 }
 
 __device__ void Thinker::commit() {
-  Node &parent = get_parent_node();
-  Node &node = get_node();
-  //table.update(node.mg.player_pos(), node.mg.opponent_pos(), -parent.beta, -parent.alpha, node.result);
-  parent.commit(node.passed_prev ? node.result : -node.result);
+  ThinkerNode &parent = thinker_stack[stack_index-1];
+  ThinkerNode &node = thinker_stack[stack_index];
+  //table.update(node.player_pos(), node.opponent_pos(), node.beta, node.start_alpha, node.result);
+  parent.commit(node.passed() ? node.result: -node.result);
   stack_index--;
 }
 
@@ -445,10 +547,108 @@ __device__ bool Thinker::commit_or_next() {
   return false;
 }
 
+__device__ void Thinker::commit_lower_impl() {
+  Node& node = get_node();
+  Node& parent = get_parent_node();
+  if (node.passed_prev) {
+    parent.commit(node.result);
+  } else {
+    parent.commit(-node.result);
+  }
+  --stack_index;
+}
+
+__device__ void Thinker::commit_to_upper() {
+  ThinkerNode &parent = thinker_stack[stack_index-1];
+  Node &node = get_node();
+  parent.commit(node.passed_prev ? node.result : -node.result);
+  --stack_index;
+}
+
+__device__ void Thinker::commit_lower() {
+  if (stack_index == thinker_stack_size) {
+    commit_to_upper();
+  } else {
+    commit_lower_impl();
+  }
+}
+
 __device__ void Thinker::commit_from_leaf(int score) {
   Node &parent = get_parent_node();
   parent.commit(-score);
   stack_index--;
+}
+
+__device__ void Thinker::think_lower() {
+  Node &node = get_node();
+  if (node.mg.completed()) {
+    if (!node.not_pass) { // pass
+      if (node.passed_prev) { // end game
+        node.result = node.mg.score();
+        commit_lower();
+      } else {
+        pass();
+      }
+    } else { // completed
+      commit_lower();
+    }
+  } else if (node.alpha >= node.beta) {
+    commit_lower();
+  } else {
+    ull next_bit = node.mg.next_bit();
+    int pos = __popcll(next_bit - 1);
+    ull flip_bits = flip(node.mg.player_pos(), node.mg.opponent_pos(), pos);
+    if (flip_bits) {
+      node.not_pass = true;
+      if (stack_index == stack_size - 1) {
+        leaf_me = node.mg.opponent_pos() ^ flip_bits;
+        leaf_op = (node.mg.player_pos() ^ flip_bits) | UINT64_C(1) << pos;
+      } else {
+        Node& next_node = get_next_node();
+        MobilityGenerator next_mg = node.mg.move(flip_bits, next_bit);
+        //Entry entry = table.find(next_mg.player_pos(), next_mg.opponent_pos());
+        //if (entry.enable) {
+        //  char next_alpha = max(-node.beta, entry.lower);
+        //  char next_beta = min(-node.alpha, entry.upper);
+        //  next_node = Node(next_mg, next_alpha, next_beta);
+        //} else {
+        next_node = Node(next_mg, -node.beta, -node.alpha);
+        //}
+      }
+      ++stack_index;
+    }
+  }
+}
+
+__device__ bool Thinker::think_upper() {
+  ThinkerNode& node = thinker_stack[stack_index];
+  if (node.completed()) {
+    if (node.size() == 0) { // pass
+      if (node.passed()) {
+        node.result = node.score();
+        if (commit_or_next()) return true;
+      } else {
+        pass_upper();
+      }
+    } else { // completed
+      if (commit_or_next()) return true;
+    }
+  } else if (node.alpha >= node.beta) {
+    if (commit_or_next()) return true;
+  } else {
+    int pos = node.pop();
+    ull flip_bits = flip(node.player_pos(), node.opponent_pos(), pos);
+    assert(flip_bits);
+    if (stack_index < thinker_stack_size - 1) {
+      ThinkerNode& next_node = thinker_stack[stack_index+1];
+      next_node = node.move(flip_bits, UINT64_C(1) << pos, table);
+    } else {
+      Node& next_node = get_next_node();
+      next_node = Node(MobilityGenerator(node.opponent_pos() ^ flip_bits, (node.player_pos() ^ flip_bits) | (UINT64_C(1) << pos)), -node.beta, -node.alpha);
+    }
+    ++stack_index;
+  }
+  return false;
 }
 
 __device__ int Thinker::think() {
@@ -458,59 +658,31 @@ __device__ int Thinker::think() {
     if (stack_index == stack_size) {
       int score = round(evaluator.eval(leaf_me, leaf_op));
       commit_from_leaf(score);
+    } else if (stack_index >= thinker_stack_size) {
+      think_lower();
     } else {
-      Node &node = get_node();
-      if (node.mg.completed()) {
-        if (!node.not_pass) { // pass
-          if (node.passed_prev) { // end game
-            node.result = node.mg.score();
-            if (commit_or_next()) return nodes_count;
-          } else {
-            pass();
-          }
-        } else { // completed
-          if (commit_or_next()) return nodes_count;
-        }
-      } else if (node.alpha >= node.beta) {
-        if (commit_or_next()) return nodes_count;
-      } else {
-        ull next_bit = node.mg.next_bit();
-        int pos = __popcll(next_bit - 1);
-        ull flip_bits = flip(node.mg.player_pos(), node.mg.opponent_pos(), pos);
-        if (flip_bits) {
-          node.not_pass = true;
-          if (stack_index == stack_size - 1) {
-            leaf_me = node.mg.opponent_pos() ^ flip_bits;
-            leaf_op = (node.mg.player_pos() ^ flip_bits) | UINT64_C(1) << pos;
-          } else {
-            Node& next_node = get_next_node();
-            MobilityGenerator next_mg = node.mg.move(flip_bits, next_bit);
-            //Entry entry = table.find(next_mg.player_pos(), next_mg.opponent_pos());
-            //if (entry.enable) {
-            //  char next_alpha = max(-node.beta, entry.lower);
-            //  char next_beta = min(-node.alpha, entry.upper);
-            //  next_node = Node(next_mg, next_alpha, next_beta);
-            //} else {
-              next_node = Node(next_mg, -node.beta, -node.alpha);
-            //}
-          }
-          ++stack_index;
-        }
+      if (think_upper()) {
+        return nodes_count;
       }
     }
   }
 }
 
 __global__ void think_kernel(
-    const AlphaBetaProblem * const abp, int * const result,
-    size_t count, size_t depth, Table table, Evaluator evaluator, ull * const nodes_total) {
+    const AlphaBetaProblem * const abp, int * const result, ThinkerNode *thinker_stack,
+    size_t count, size_t depth, const size_t thinker_stack_size, Table table,
+    Evaluator evaluator, ull * const nodes_total) {
+  int index_global = blockIdx.x * blockDim.x + threadIdx.x;
   index_shared = blockIdx.x;
   __syncthreads();
   size_t index = atomicAdd(&index_shared, gridDim.x);
   if (index < count) {
+    ThinkerNode *tstack = thinker_stack + index_global * thinker_stack_size;
     const AlphaBetaProblem &problem = abp[index];
     Thinker thinker = {
       0, // stack_index
+      tstack,
+      thinker_stack_size,
       0, 0, // leaf
       depth,
       abp, // abp
@@ -520,7 +692,7 @@ __global__ void think_kernel(
       table, // table
       evaluator // evaluator
     };
-    nodes_stack[threadIdx.x] = Node(MobilityGenerator(problem.player, problem.opponent), problem.alpha, problem.beta);
+    thinker.thinker_stack[0] = ThinkerNode(problem.player, problem.opponent, -64, problem.alpha, problem.beta);
     ull nodes_count = thinker.think();
     atomicAdd(nodes_total, nodes_count);
   }
@@ -570,11 +742,12 @@ void init_batch(BatchedThinkTask &bt, size_t batch_size, size_t depth, const Tab
   bt.size = batch_size;
   bt.grid_size = (batch_size + chunk_size - 1) / chunk_size;
   bt.depth = depth;
+  cudaMalloc((void**)&bt.thinker_stacks, sizeof(ThinkerNode) * bt.grid_size * nodesPerBlock * (bt.depth - think_lower_stack_depth));
 }
 
 void launch_batch(const BatchedThinkTask &bt) {
-  think_kernel<<<bt.grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * bt.depth, *bt.str>>>(
-      bt.abp, bt.result, bt.size, bt.depth, bt.table, bt.evaluator, bt.total);
+  think_kernel<<<bt.grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * think_lower_stack_depth, *bt.str>>>(
+      bt.abp, bt.result, bt.thinker_stacks, bt.size, bt.depth, bt.depth - think_lower_stack_depth, bt.table, bt.evaluator, bt.total);
 }
 
 bool is_ready_batch(const BatchedThinkTask &bt) {
@@ -586,5 +759,6 @@ void destroy_batch(const BatchedThinkTask &bt) {
   free(bt.str);
   cudaFree(bt.abp);
   cudaFree(bt.result);
+  cudaFree(bt.thinker_stacks);
   cudaFree(bt.total);
 }
