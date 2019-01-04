@@ -154,7 +154,7 @@ class UpperNode {
       ull flip_bits = flip(player, opponent, pos);
       if (flip_bits) {
         cntary[possize] = mobility_count(opponent ^ flip_bits, (player ^ flip_bits) | next_bit);
-        posary[possize++] = pos;
+        posary[possize++] = static_cast<hand>(pos);
       }
     }
     thrust::sort_by_key(thrust::seq, cntary, cntary + possize, posary);
@@ -163,7 +163,7 @@ class UpperNode {
   __device__ bool completed() const {
     return index == possize;
   }
-  __device__ int pop() {
+  __device__ hand pop() {
     return posary[index++];
   }
   __device__ int size() const {
@@ -221,7 +221,7 @@ class UpperNode {
   char beta;
  private:
   ull player, opponent;
-  char posary[max_mobility_count];
+  hand posary[max_mobility_count];
   char possize;
   char index;
   bool prev_passed;
@@ -293,15 +293,16 @@ __device__ bool Solver::solve_all_upper() {
   } else if (node.alpha >= node.beta) {
     if (commit_or_next()) return true;
   } else {
-    int pos = node.pop();
-    ull flip_bits = flip(node.player_pos(), node.opponent_pos(), pos);
+    hand pos = node.pop();
+    ull flip_bits = flip(node.player_pos(), node.opponent_pos(), static_cast<int>(pos));
     assert(flip_bits);
+    ull bit = UINT64_C(1) << static_cast<int>(pos);
     if (stack_index < upper_stack_size - 1) {
       UpperNode& next_node = upper_stack[stack_index+1];
-      next_node = node.move(flip_bits, UINT64_C(1) << pos, table);
+      next_node = node.move(flip_bits, bit, table);
     } else {
       Node& next_node = get_next_node();
-      next_node = Node(MobilityGenerator(node.opponent_pos() ^ flip_bits, (node.player_pos() ^ flip_bits) | (UINT64_C(1) << pos)), -node.beta, -node.alpha);
+      next_node = Node(MobilityGenerator(node.opponent_pos() ^ flip_bits, (node.player_pos() ^ flip_bits) | bit), -node.beta, -node.alpha);
     }
     ++stack_index;
   }
@@ -380,7 +381,8 @@ class ThinkerNode {
   static constexpr int max_mobility_count = 46;
   __device__ ThinkerNode(ull player, ull opponent, char result, char alpha, char beta, bool pass = false)
       : player(player), opponent(opponent), possize(0), index(0),
-      result(result), start_alpha(alpha), alpha(alpha), beta(beta), prev_passed(pass) {
+      result(result), start_alpha(alpha), alpha(alpha), beta(beta),
+      bestmove(hand::NOMOVE), nowmove(hand::NOMOVE), prev_passed(pass) {
     MobilityGenerator mg(player, opponent);
     char cntary[max_mobility_count];
     while(!mg.completed()) {
@@ -389,7 +391,7 @@ class ThinkerNode {
       ull flip_bits = flip(player, opponent, pos);
       if (flip_bits) {
         cntary[possize] = mobility_count(opponent ^ flip_bits, (player ^ flip_bits) | next_bit);
-        posary[possize++] = pos;
+        posary[possize++] = static_cast<hand>(pos);
       }
     }
     thrust::sort_by_key(thrust::seq, cntary, cntary + possize, posary);
@@ -398,8 +400,10 @@ class ThinkerNode {
   __device__ bool completed() const {
     return index == possize;
   }
-  __device__ int pop() {
-    return posary[index++];
+  __device__ hand pop() {
+    nowmove = posary[index];
+    ++index;
+    return nowmove;
   }
   __device__ int size() const {
     return possize;
@@ -429,7 +433,7 @@ class ThinkerNode {
     //    return UpperNode(next_player, next_opponent, -64, next_alpha, next_beta);
     //  }
     //} else {
-      return ThinkerNode(next_player, next_opponent, -64, -beta, -alpha);
+      return ThinkerNode(next_player, next_opponent, -65, -beta, -alpha);
     //}
   }
   __device__ ThinkerNode pass(Table table) const {
@@ -443,20 +447,25 @@ class ThinkerNode {
     //    return UpperNode(opponent, player, -64, next_alpha, next_beta, true);
     //  }
     //} else {
-      return ThinkerNode(opponent, player, -64, -beta, -alpha, true);
+      return ThinkerNode(opponent, player, -65, -beta, -alpha, true);
     //}
   }
   __device__ void commit(char score) {
-    result = max(result, score);
-    alpha = max(alpha, result);
+    if (score > result) {
+      result = score;
+      bestmove = nowmove;
+      alpha = max(alpha, result);
+    }
   }
   char result;
   char start_alpha;
   char alpha;
   char beta;
+  hand bestmove;
+  hand nowmove;
  private:
   ull player, opponent;
-  char posary[max_mobility_count];
+  hand posary[max_mobility_count];
   char possize;
   char index;
   bool prev_passed;
@@ -470,6 +479,7 @@ struct Thinker {
   const size_t stack_size;
   const AlphaBetaProblem * const abp;
   int *result;
+  hand *bestmove;
   size_t count;
   size_t index;
   Table table;
@@ -522,9 +532,10 @@ __device__ void Thinker::pass() {
 __device__ bool Thinker::next_game() {
   ThinkerNode &node = thinker_stack[0];
   result[index] = node.passed() ? -node.result : node.result;
+  bestmove[index] = node.passed() ? hand::PASS : node.bestmove;
   index = atomicAdd(&index_shared, gridDim.x);
   if (index < count) {
-    thinker_stack[0] = ThinkerNode(abp[index].player, abp[index].opponent, -64, abp[index].alpha, abp[index].beta);
+    thinker_stack[0] = ThinkerNode(abp[index].player, abp[index].opponent, -65, abp[index].alpha, abp[index].beta);
   }
   return index < count;
 }
@@ -636,15 +647,16 @@ __device__ bool Thinker::think_upper() {
   } else if (node.alpha >= node.beta) {
     if (commit_or_next()) return true;
   } else {
-    int pos = node.pop();
-    ull flip_bits = flip(node.player_pos(), node.opponent_pos(), pos);
+    hand pos = node.pop();
+    ull flip_bits = flip(node.player_pos(), node.opponent_pos(), static_cast<int>(pos));
     assert(flip_bits);
+    ull bit = UINT64_C(1) << static_cast<int>(pos);
     if (stack_index < thinker_stack_size - 1) {
       ThinkerNode& next_node = thinker_stack[stack_index+1];
-      next_node = node.move(flip_bits, UINT64_C(1) << pos, table);
+      next_node = node.move(flip_bits, bit, table);
     } else {
       Node& next_node = get_next_node();
-      next_node = Node(MobilityGenerator(node.opponent_pos() ^ flip_bits, (node.player_pos() ^ flip_bits) | (UINT64_C(1) << pos)), -node.beta, -node.alpha);
+      next_node = Node(MobilityGenerator(node.opponent_pos() ^ flip_bits, (node.player_pos() ^ flip_bits) | bit), -node.beta, -node.alpha);
     }
     ++stack_index;
   }
@@ -669,7 +681,8 @@ __device__ int Thinker::think() {
 }
 
 __global__ void think_kernel(
-    const AlphaBetaProblem * const abp, int * const result, ThinkerNode *thinker_stack,
+    const AlphaBetaProblem * const abp, int * const result,
+    hand * const bestmove, ThinkerNode *thinker_stack,
     size_t count, size_t depth, const size_t thinker_stack_size, Table table,
     Evaluator evaluator, ull * const nodes_total) {
   int index_global = blockIdx.x * blockDim.x + threadIdx.x;
@@ -687,12 +700,13 @@ __global__ void think_kernel(
       depth,
       abp, // abp
       result, // result
+      bestmove, // bestmove
       count, // count
       index, // index
       table, // table
       evaluator // evaluator
     };
-    thinker.thinker_stack[0] = ThinkerNode(problem.player, problem.opponent, -64, problem.alpha, problem.beta);
+    thinker.thinker_stack[0] = ThinkerNode(problem.player, problem.opponent, -65, problem.alpha, problem.beta);
     ull nodes_count = thinker.think();
     atomicAdd(nodes_total, nodes_count);
   }
@@ -735,6 +749,7 @@ void init_batch(BatchedThinkTask &bt, size_t batch_size, size_t depth, const Tab
   cudaStreamCreate(bt.str);
   cudaMallocManaged((void**)&bt.abp, sizeof(AlphaBetaProblem) * batch_size);
   cudaMallocManaged((void**)&bt.result, sizeof(int) * batch_size);
+  cudaMallocManaged((void**)&bt.bestmove, sizeof(hand) * batch_size);
   cudaMallocManaged((void**)&bt.total, sizeof(ull));
   *bt.total = 0;
   bt.table = table;
@@ -747,7 +762,7 @@ void init_batch(BatchedThinkTask &bt, size_t batch_size, size_t depth, const Tab
 
 void launch_batch(const BatchedThinkTask &bt) {
   think_kernel<<<bt.grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * think_lower_stack_depth, *bt.str>>>(
-      bt.abp, bt.result, bt.thinker_stacks, bt.size, bt.depth, bt.depth - think_lower_stack_depth, bt.table, bt.evaluator, bt.total);
+      bt.abp, bt.result, bt.bestmove, bt.thinker_stacks, bt.size, bt.depth, bt.depth - think_lower_stack_depth, bt.table, bt.evaluator, bt.total);
 }
 
 bool is_ready_batch(const BatchedThinkTask &bt) {
@@ -759,6 +774,7 @@ void destroy_batch(const BatchedThinkTask &bt) {
   free(bt.str);
   cudaFree(bt.abp);
   cudaFree(bt.result);
+  cudaFree(bt.bestmove);
   cudaFree(bt.thinker_stacks);
   cudaFree(bt.total);
 }
