@@ -198,7 +198,7 @@ class UpperNode {
     //}
   }
   __device__ UpperNode pass(Table table) const {
-    Entry entry = table.find(opponent, player);
+    //Entry entry = table.find(opponent, player);
     //if (entry.enable) {
     //  char next_alpha = max(-beta, entry.lower);
     //  char next_beta = min(-alpha, entry.upper);
@@ -433,7 +433,7 @@ class ThinkerNode {
     //}
   }
   __device__ ThinkerNode pass(Table table) const {
-    Entry entry = table.find(opponent, player);
+    //Entry entry = table.find(opponent, player);
     //if (entry.enable) {
     //  char next_alpha = max(-beta, entry.lower);
     //  char next_beta = min(-alpha, entry.upper);
