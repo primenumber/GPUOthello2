@@ -20,7 +20,9 @@ class MobilityGenerator {
   }
   __host__ __device__ ull next_bit() {
     ull p = not_checked_yet();
-    ull bit = p & -p;
+    constexpr ull corner = UINT64_C(0x8100000000000081);
+    ull masked = p & corner;
+    ull bit = masked ? (masked & -masked) : (p & -p);
     reset(bit);
     return bit;
   }
