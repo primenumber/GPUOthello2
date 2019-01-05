@@ -55,19 +55,8 @@ void think(char **argv) {
   constexpr size_t batch_size = 8192;
   size_t batch_count = (n + batch_size - 1) / batch_size;
   std::vector<ThinkBatch> vb(batch_count);
-  Table table;
   constexpr size_t table_size = 50000001;
-  cudaMallocManaged((void**)&table.entries, sizeof(Entry) * table_size);
-  cudaMallocManaged((void**)&table.mutex, sizeof(int) * table_size);
-  cudaMallocManaged((void**)&table.update_count, sizeof(ull));
-  cudaMallocManaged((void**)&table.hit_count, sizeof(ull));
-  cudaMallocManaged((void**)&table.lookup_count, sizeof(ull));
-  table.size = table_size;
-  *table.update_count = 0;
-  *table.hit_count = 0;
-  *table.lookup_count = 0;
-  memset(table.entries, 0, sizeof(Entry) * table_size);
-  memset(table.mutex, 0, sizeof(int) * table_size);
+  Table table(table_size);
   for (size_t i = 0; i < batch_count; ++i) {
     int size = min(batch_size, n - i*batch_size);
     init_batch(vb[i].bt, size, depth, table, evaluator);
@@ -101,11 +90,6 @@ void think(char **argv) {
     destroy_batch(b.bt);
   }
   fprintf(stderr, "total nodes: %llu\n", total);
-  cudaFree(table.entries);
-  cudaFree(table.mutex);
-  cudaFree(table.update_count);
-  cudaFree(table.hit_count);
-  cudaFree(table.lookup_count);
 }
 
 int main(int argc, char **argv) {
@@ -135,19 +119,8 @@ int main(int argc, char **argv) {
   constexpr size_t batch_size = 2000000;
   size_t batch_count = (n + batch_size - 1) / batch_size;
   std::vector<Batch> vb(batch_count);
-  Table table;
   constexpr size_t table_size = 50000001;
-  cudaMallocManaged((void**)&table.entries, sizeof(Entry) * table_size);
-  cudaMallocManaged((void**)&table.mutex, sizeof(int) * table_size);
-  cudaMallocManaged((void**)&table.update_count, sizeof(ull));
-  cudaMallocManaged((void**)&table.hit_count, sizeof(ull));
-  cudaMallocManaged((void**)&table.lookup_count, sizeof(ull));
-  table.size = table_size;
-  *table.update_count = 0;
-  *table.hit_count = 0;
-  *table.lookup_count = 0;
-  memset(table.entries, 0, sizeof(Entry) * table_size);
-  memset(table.mutex, 0, sizeof(int) * table_size);
+  Table table(table_size);
   for (size_t i = 0; i < batch_count; ++i) {
     int size = min(batch_size, n - i*batch_size);
     init_batch(vb[i].bt, size, max_depth, table);
@@ -181,9 +154,4 @@ int main(int argc, char **argv) {
     destroy_batch(b.bt);
   }
   fprintf(stderr, "total nodes: %llu\n", total);
-  cudaFree(table.entries);
-  cudaFree(table.mutex);
-  cudaFree(table.update_count);
-  cudaFree(table.hit_count);
-  cudaFree(table.lookup_count);
 }

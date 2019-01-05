@@ -15,6 +15,10 @@ struct Entry {
 
 class Table {
  public:
+  __host__ Table(const size_t table_size);
+  __host__ __device__ ~Table();
+  Table(Table&&);
+  Table(const Table&) = default;
   __device__ Entry find(ull player, ull opponent) const;
   __device__ void update(ull player, ull opponent, char upper, char lower, char value) const;
   Entry * entries;

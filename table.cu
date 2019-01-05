@@ -1,6 +1,36 @@
 #include "table.cuh"
 #include "board.cuh"
 
+__host__ Table::Table(const size_t table_size) : size(table_size) {
+  cudaMallocManaged((void**)&entries, sizeof(Entry) * size);
+  cudaMallocManaged((void**)&mutex, sizeof(int) * size);
+  cudaMallocManaged((void**)&update_count, sizeof(ull));
+  cudaMallocManaged((void**)&hit_count, sizeof(ull));
+  cudaMallocManaged((void**)&lookup_count, sizeof(ull));
+  *update_count = 0;
+  *hit_count = 0;
+  *lookup_count = 0;
+  memset(entries, 0, sizeof(Entry) * size);
+  memset(mutex, 0, sizeof(int) * size);
+}
+
+__host__ Table::~Table() {
+#ifndef __CUDA_ARCH__
+  if (entries != nullptr) {
+    cudaFree(entries);
+    cudaFree(mutex);
+    cudaFree(update_count);
+    cudaFree(hit_count);
+    cudaFree(lookup_count);
+  }
+#endif
+}
+
+Table::Table(Table&& that)
+  : Table(that) {
+  that.entries = nullptr;
+}
+
 __device__ Entry Table::find(ull player, ull opponent) const {
   atomicAdd(lookup_count, 1);
   ull hash = (player + 17 * opponent) % size;
