@@ -712,69 +712,79 @@ __global__ void think_kernel(
   }
 }
 
-void init_batch(BatchedTask &bt, size_t batch_size, size_t max_depth, const Table &table) {
-  bt.str = (cudaStream_t*)malloc(sizeof(cudaStream_t));
-  cudaStreamCreate(bt.str);
-  cudaMallocManaged((void**)&bt.abp, sizeof(AlphaBetaProblem) * batch_size);
-  cudaMallocManaged((void**)&bt.result, sizeof(int) * batch_size);
-  cudaMallocManaged((void**)&bt.total, sizeof(ull));
-  *bt.total = 0;
-  bt.table = table;
-  bt.size = batch_size;
-  bt.grid_size = (batch_size + chunk_size - 1) / chunk_size;
-  bt.max_depth = max_depth;
-  cudaMalloc((void**)&bt.upper_stacks, sizeof(UpperNode) * bt.grid_size * nodesPerBlock * (bt.max_depth - lower_stack_depth));
+BatchedTask::BatchedTask(const size_t batch_size, const size_t max_depth,
+    const Table &table) : table(table), size(batch_size), max_depth(max_depth) {
+  str = (cudaStream_t*)malloc(sizeof(cudaStream_t));
+  cudaStreamCreate(str);
+  cudaMallocManaged((void**)&abp, sizeof(AlphaBetaProblem) * size);
+  cudaMallocManaged((void**)&result, sizeof(int) * size);
+  cudaMallocManaged((void**)&total, sizeof(ull));
+  *total = 0;
+  grid_size = (batch_size + chunk_size - 1) / chunk_size;
+  cudaMalloc((void**)&upper_stacks, sizeof(UpperNode) * grid_size * nodesPerBlock * (max_depth - lower_stack_depth));
 }
 
-void launch_batch(const BatchedTask &bt) {
-  alpha_beta_kernel<<<bt.grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * (lower_stack_depth + 1), *bt.str>>>(
-      bt.abp, bt.result, bt.upper_stacks, bt.size, bt.max_depth - lower_stack_depth, bt.table, bt.total);
+BatchedTask::BatchedTask(BatchedTask&& that)
+  : BatchedTask(that) {
+  that.str = nullptr;
 }
 
-bool is_ready_batch(const BatchedTask &bt) {
-  return cudaStreamQuery(*bt.str) == cudaSuccess;
+void BatchedTask::launch() const {
+  alpha_beta_kernel<<<grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * (lower_stack_depth + 1), *str>>>(
+      abp, result, upper_stacks, size, max_depth - lower_stack_depth, table, total);
 }
 
-void destroy_batch(const BatchedTask &bt) {
-  cudaStreamDestroy(*bt.str);
-  free(bt.str);
-  cudaFree(bt.abp);
-  cudaFree(bt.result);
-  cudaFree(bt.upper_stacks);
-  cudaFree(bt.total);
+bool BatchedTask::is_ready() const {
+  return cudaStreamQuery(*str) == cudaSuccess;
 }
 
-void init_batch(BatchedThinkTask &bt, size_t batch_size, size_t depth, const Table &table, const Evaluator &evaluator) {
-  bt.str = (cudaStream_t*)malloc(sizeof(cudaStream_t));
-  cudaStreamCreate(bt.str);
-  cudaMallocManaged((void**)&bt.abp, sizeof(AlphaBetaProblem) * batch_size);
-  cudaMallocManaged((void**)&bt.result, sizeof(int) * batch_size);
-  cudaMallocManaged((void**)&bt.bestmove, sizeof(hand) * batch_size);
-  cudaMallocManaged((void**)&bt.total, sizeof(ull));
-  *bt.total = 0;
-  bt.table = table;
-  bt.evaluator = evaluator;
-  bt.size = batch_size;
-  bt.grid_size = (batch_size + chunk_size - 1) / chunk_size;
-  bt.depth = depth;
-  cudaMalloc((void**)&bt.thinker_stacks, sizeof(ThinkerNode) * bt.grid_size * nodesPerBlock * (bt.depth - think_lower_stack_depth));
+BatchedTask::~BatchedTask() {
+  if (str != nullptr) {
+    cudaStreamDestroy(*str);
+    free(str);
+    cudaFree(abp);
+    cudaFree(result);
+    cudaFree(upper_stacks);
+    cudaFree(total);
+  }
 }
 
-void launch_batch(const BatchedThinkTask &bt) {
-  think_kernel<<<bt.grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * think_lower_stack_depth, *bt.str>>>(
-      bt.abp, bt.result, bt.bestmove, bt.thinker_stacks, bt.size, bt.depth, bt.depth - think_lower_stack_depth, bt.table, bt.evaluator, bt.total);
+BatchedThinkTask::BatchedThinkTask(const size_t batch_size, const size_t depth,
+    const Table &table, const Evaluator &evaluator)
+  : table(table), evaluator(evaluator), size(batch_size), depth(depth) {
+  str = (cudaStream_t*)malloc(sizeof(cudaStream_t));
+  cudaStreamCreate(str);
+  cudaMallocManaged((void**)&abp, sizeof(AlphaBetaProblem) * size);
+  cudaMallocManaged((void**)&result, sizeof(int) * size);
+  cudaMallocManaged((void**)&bestmove, sizeof(hand) * size);
+  cudaMallocManaged((void**)&total, sizeof(ull));
+  *total = 0;
+  grid_size = (size + chunk_size - 1) / chunk_size;
+  cudaMalloc((void**)&thinker_stacks, sizeof(ThinkerNode) * grid_size * nodesPerBlock * (depth - think_lower_stack_depth));
 }
 
-bool is_ready_batch(const BatchedThinkTask &bt) {
-  return cudaStreamQuery(*bt.str) == cudaSuccess;
+BatchedThinkTask::BatchedThinkTask(BatchedThinkTask&& that)
+  : BatchedThinkTask(that) {
+  that.str = nullptr;
 }
 
-void destroy_batch(const BatchedThinkTask &bt) {
-  cudaStreamDestroy(*bt.str);
-  free(bt.str);
-  cudaFree(bt.abp);
-  cudaFree(bt.result);
-  cudaFree(bt.bestmove);
-  cudaFree(bt.thinker_stacks);
-  cudaFree(bt.total);
+void BatchedThinkTask::launch() const {
+  think_kernel<<<grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * think_lower_stack_depth, *str>>>(
+      abp, result, bestmove, thinker_stacks, size, depth, depth - think_lower_stack_depth, table, evaluator, total);
+}
+
+bool BatchedThinkTask::is_ready() const {
+  return cudaStreamQuery(*str) == cudaSuccess;
+}
+
+BatchedThinkTask::~BatchedThinkTask() {
+  if (str != nullptr) {
+    cudaStreamDestroy(*str);
+    free(str);
+    cudaFree(abp);
+    cudaFree(result);
+    cudaFree(bestmove);
+    cudaFree(thinker_stacks);
+    cudaFree(total);
+  }
 }

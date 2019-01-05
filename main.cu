@@ -52,29 +52,31 @@ void think(char **argv) {
   vboard.erase(std::unique(std::begin(vboard), std::end(vboard)), std::end(vboard));
   n = vboard.size();
   fprintf(stderr, "n = %d\n", n);
-  constexpr size_t batch_size = 8192;
+  constexpr size_t batch_size = 2000000;
   size_t batch_count = (n + batch_size - 1) / batch_size;
-  std::vector<ThinkBatch> vb(batch_count);
+  std::vector<ThinkBatch> vb;
   constexpr size_t table_size = 50000001;
   Table table(table_size);
   for (size_t i = 0; i < batch_count; ++i) {
     int size = min(batch_size, n - i*batch_size);
-    init_batch(vb[i].bt, size, depth, table, evaluator);
-    for (int j = 0; j < vb[i].bt.size; ++j) {
+    BatchedThinkTask bt(size, depth, table, evaluator);
+    std::vector<std::string> vstr(size);
+    for (int j = 0; j < size; ++j) {
       ull player, opponent;
       std::tie(player, opponent) = toBoard(vboard[i*batch_size+j].c_str());
-      vb[i].bt.abp[j] = AlphaBetaProblem(player, opponent);
-      vb[i].vstr.push_back(vboard[i*batch_size+j]);
+      bt.abp[j] = AlphaBetaProblem(player, opponent);
+      vstr[j] = vboard[i*batch_size+j];
     }
+    vb.emplace_back((ThinkBatch){std::move(bt), vstr});
   }
   boost::timer::cpu_timer timer;
   for (const auto &b : vb) {
-    launch_batch(b.bt);
+    b.bt.launch();
   }
   while (true) {
     bool finished = true;
     for (const auto &b : vb) {
-      if (!is_ready_batch(b.bt)) finished = false;
+      if (!b.bt.is_ready()) finished = false;
     }
     if (finished) break;
   }
@@ -87,7 +89,6 @@ void think(char **argv) {
     for (int j = 0; j < b.bt.size; ++j) {
       fprintf(fp_out, "%s %d\n", b.vstr[j].c_str(), b.bt.result[j]);
     }
-    destroy_batch(b.bt);
   }
   fprintf(stderr, "total nodes: %llu\n", total);
 }
@@ -118,12 +119,12 @@ int main(int argc, char **argv) {
   fprintf(stderr, "n = %d\n", n);
   constexpr size_t batch_size = 2000000;
   size_t batch_count = (n + batch_size - 1) / batch_size;
-  std::vector<Batch> vb(batch_count);
+  std::vector<Batch> vb;
   constexpr size_t table_size = 50000001;
   Table table(table_size);
   for (size_t i = 0; i < batch_count; ++i) {
     int size = min(batch_size, n - i*batch_size);
-    init_batch(vb[i].bt, size, max_depth, table);
+    vb.emplace_back((Batch){BatchedTask(size, max_depth, table), std::vector<std::string>()});
     for (int j = 0; j < vb[i].bt.size; ++j) {
       ull player, opponent;
       std::tie(player, opponent) = toBoard(vboard[i*batch_size+j].c_str());
@@ -133,12 +134,12 @@ int main(int argc, char **argv) {
   }
   boost::timer::cpu_timer timer;
   for (const auto &b : vb) {
-    launch_batch(b.bt);
+    b.bt.launch();
   }
   while (true) {
     bool finished = true;
     for (const auto &b : vb) {
-      if (!is_ready_batch(b.bt)) finished = false;
+      if (!b.bt.is_ready()) finished = false;
     }
     if (finished) break;
   }
@@ -151,7 +152,6 @@ int main(int argc, char **argv) {
     for (int j = 0; j < b.bt.size; ++j) {
       fprintf(fp_out, "%s %d\n", b.vstr[j].c_str(), b.bt.result[j]);
     }
-    destroy_batch(b.bt);
   }
   fprintf(stderr, "total nodes: %llu\n", total);
 }
