@@ -24,6 +24,16 @@ void output_board(const ull p, const ull o) {
   printf("\n");
 }
 
+std::string hand_to_s(const hand move) {
+  if (move == hand::PASS) {
+    return "ps";
+  } else {
+    std::string res(1, static_cast<char>(static_cast<int>(move) % 8 + 'A'));
+    res += static_cast<int>(move) / 8 + '1';
+    return res;
+  }
+}
+
 struct Batch {
   BatchedTask bt;
   std::vector<std::string> vstr;
@@ -87,7 +97,8 @@ void think(char **argv) {
   for (const auto &b : vb) {
     total += *b.bt.total;
     for (int j = 0; j < b.bt.size; ++j) {
-      fprintf(fp_out, "%s %d\n", b.vstr[j].c_str(), b.bt.result[j]);
+      fprintf(fp_out, "%s %d %s\n", b.vstr[j].c_str(), b.bt.result[j],
+          hand_to_s(b.bt.bestmove[j]).c_str());
     }
   }
   fprintf(stderr, "total nodes: %llu\n", total);
