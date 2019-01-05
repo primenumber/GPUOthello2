@@ -91,8 +91,11 @@ void think(char **argv) {
     }
     if (finished) break;
   }
-  fprintf(stderr, "%s, elapsed: %.6fs, table update count: %llu, table hit: %llu, table find: %llu\n",
-      cudaGetErrorString(cudaGetLastError()), timer.elapsed().wall/1000000000.0,
+  const auto status = cudaGetLastError();
+  fprintf(stderr, "%s (%s), elapsed: %.6fs, table update count: %llu, table hit: %llu, table find: %llu\n",
+      cudaGetErrorName(status),
+      cudaGetErrorString(status),
+      timer.elapsed().wall/1000000000.0,
       *table.update_count, *table.hit_count, *table.lookup_count);
   ull total = 0;
   for (const auto &b : vb) {
@@ -157,8 +160,11 @@ int main(int argc, char **argv) {
     }
     if (finished) break;
   }
-  fprintf(stderr, "%s, elapsed: %.6fs, table update count: %llu, table hit: %llu, table find: %llu\n",
-      cudaGetErrorString(cudaGetLastError()), timer.elapsed().wall/1000000000.0,
+  const auto status = cudaGetLastError();
+  fprintf(stderr, "%s (%s), elapsed: %.6fs, table update count: %llu, table hit: %llu, table find: %llu\n",
+      cudaGetErrorName(status),
+      cudaGetErrorString(status),
+      timer.elapsed().wall/1000000000.0,
       *table.update_count, *table.hit_count, *table.lookup_count);
   ull total = 0;
   for (const auto &b : vb) {
