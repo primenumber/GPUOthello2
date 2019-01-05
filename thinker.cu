@@ -5,7 +5,7 @@
 #include "board.cuh"
 #include "node.cuh"
 
-constexpr int think_lower_stack_depth = 2;
+constexpr int think_lower_stack_depth = 3;
 
 extern __shared__ Node nodes_stack[];
 
