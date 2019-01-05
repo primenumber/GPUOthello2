@@ -1,4 +1,3 @@
-#include "solver.cuh"
 #include <algorithm>
 #include <iostream>
 #include <string>
@@ -6,6 +5,8 @@
 #include <tuple>
 #include <boost/timer/timer.hpp>
 #include "to_board.hpp"
+#include "solver.cuh"
+#include "thinker.cuh"
 
 void output_board(const ull p, const ull o) {
   for (int i = 0; i < 8; ++i) {
