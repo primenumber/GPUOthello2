@@ -287,7 +287,7 @@ __global__ void alpha_beta_kernel(
     size_t count, size_t upper_stack_size, Table table, ull * const nodes_total) {
   int index_global = blockIdx.x * blockDim.x + threadIdx.x;
   __shared__ unsigned int index_shared;
-    index_shared = blockIdx.x;
+  index_shared = blockIdx.x;
   __syncthreads();
   size_t index = atomicAdd(&index_shared, gridDim.x);
   if (index < count) {
