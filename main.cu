@@ -136,13 +136,15 @@ int main(int argc, char **argv) {
   Table table(table_size);
   for (size_t i = 0; i < batch_count; ++i) {
     int size = min(batch_size, n - i*batch_size);
-    vb.emplace_back((Batch){BatchedTask(size, max_depth, table), std::vector<std::string>()});
-    for (int j = 0; j < vb[i].bt.size; ++j) {
+    BatchedTask bt(size, max_depth, table);
+    std::vector<std::string> vstr;
+    for (int j = 0; j < size; ++j) {
       ull player, opponent;
       std::tie(player, opponent) = toBoard(vboard[i*batch_size+j].c_str());
-      vb[i].bt.abp[j] = AlphaBetaProblem(player, opponent);
-      vb[i].vstr.push_back(vboard[i*batch_size+j]);
+      bt.abp[j] = AlphaBetaProblem(player, opponent);
+      vstr.push_back(vboard[i*batch_size+j]);
     }
+    vb.emplace_back((Batch){std::move(bt), vstr});
   }
   boost::timer::cpu_timer timer;
   for (const auto &b : vb) {
