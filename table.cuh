@@ -18,16 +18,23 @@ class Table {
   __host__ Table(const size_t table_size);
   __host__ __device__ ~Table();
   Table(Table&&);
-  Table(const Table&) = default;
   __device__ Entry find(ull player, ull opponent) const;
   __device__ void update(ull player, ull opponent, char upper, char lower, char value) const;
+  __host__ Table weak_clone() const {
+    return Table(entries, mutex, size, update_count, hit_count, lookup_count, false);
+  }
   Entry * entries;
   mutable int *mutex;
   size_t size;
   ull *update_count;
   ull *hit_count;
   ull *lookup_count;
+  bool enable = true;
  private:
+  __host__ Table(Entry * entries, int *mutex, size_t size,
+      ull *update_count, ull *hit_count, ull *lookup_count, bool enable)
+    : entries(entries), mutex(mutex), size(size), update_count(update_count),
+      hit_count(hit_count), lookup_count(lookup_count), enable(enable) {}
   __device__ bool try_lock(ull index) const {
     bool result = atomicCAS(mutex + index, 0, 1) == 0;
     __threadfence();

@@ -78,7 +78,7 @@ void think(char **argv) {
       bt.abp[j] = AlphaBetaProblem(player, opponent);
       vstr[j] = vboard[i*batch_size+j];
     }
-    vb.emplace_back((ThinkBatch){std::move(bt), vstr});
+    vb.emplace_back(std::move((ThinkBatch){std::move(bt), vstr}));
   }
   boost::timer::cpu_timer timer;
   for (const auto &b : vb) {
@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
       bt.abp[j] = AlphaBetaProblem(player, opponent);
       vstr.push_back(vboard[i*batch_size+j]);
     }
-    vb.emplace_back((Batch){std::move(bt), vstr});
+    vb.emplace_back(std::move((Batch){std::move(bt), vstr}));
   }
   boost::timer::cpu_timer timer;
   for (const auto &b : vb) {

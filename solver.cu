@@ -20,7 +20,7 @@ struct Solver {
   int *result;
   size_t count;
   size_t index;
-  Table table;
+  Table& table;
   unsigned int *index_shared;
 
   __device__ Node& get_node();
@@ -113,7 +113,7 @@ class UpperNode {
   __device__ int score() const {
     return final_score(player, opponent);
   }
-  __device__ UpperNode move(ull bits, ull pos_bit, Table table) const {
+  __device__ UpperNode move(ull bits, ull pos_bit, Table& table) const {
     ull next_player = opponent ^ bits;
     ull next_opponent = (player ^ bits) | pos_bit;
     //Entry entry = table.find(next_player, next_opponent);
@@ -129,7 +129,7 @@ class UpperNode {
       return UpperNode(next_player, next_opponent, -64, -beta, -alpha);
     //}
   }
-  __device__ UpperNode pass(Table table) const {
+  __device__ UpperNode pass(Table& table) const {
     //Entry entry = table.find(opponent, player);
     //if (entry.enable) {
     //  char next_alpha = max(-beta, entry.lower);
@@ -329,7 +329,7 @@ BatchedTask::BatchedTask(BatchedTask&& that)
 
 void BatchedTask::launch() const {
   alpha_beta_kernel<<<grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * (lower_stack_depth + 1), *str>>>(
-      abp, result, upper_stacks, size, max_depth - lower_stack_depth, table, total);
+      abp, result, upper_stacks, size, max_depth - lower_stack_depth, table.weak_clone(), total);
 }
 
 bool BatchedTask::is_ready() const {

@@ -16,7 +16,7 @@ __host__ Table::Table(const size_t table_size) : size(table_size) {
 
 __host__ Table::~Table() {
 #ifndef __CUDA_ARCH__
-  if (entries != nullptr) {
+  if (enable) {
     cudaFree(entries);
     cudaFree(mutex);
     cudaFree(update_count);
@@ -27,8 +27,10 @@ __host__ Table::~Table() {
 }
 
 Table::Table(Table&& that)
-  : Table(that) {
-  that.entries = nullptr;
+  : entries(that.entries), mutex(that.mutex),
+    update_count(that.update_count), hit_count(that.hit_count),
+    lookup_count(that.lookup_count) {
+  that.enable = false;
 }
 
 __device__ Entry Table::find(ull player, ull opponent) const {

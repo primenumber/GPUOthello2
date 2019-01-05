@@ -53,7 +53,7 @@ class ThinkerNode {
   __device__ int score() const {
     return final_score(player, opponent);
   }
-  __device__ ThinkerNode move(ull bits, ull pos_bit, Table table) const {
+  __device__ ThinkerNode move(ull bits, ull pos_bit, Table& table) const {
     ull next_player = opponent ^ bits;
     ull next_opponent = (player ^ bits) | pos_bit;
     //Entry entry = table.find(next_player, next_opponent);
@@ -69,7 +69,7 @@ class ThinkerNode {
       return ThinkerNode(next_player, next_opponent, -65, -beta, -alpha);
     //}
   }
-  __device__ ThinkerNode pass(Table table) const {
+  __device__ ThinkerNode pass(Table& table) const {
     //Entry entry = table.find(opponent, player);
     //if (entry.enable) {
     //  char next_alpha = max(-beta, entry.lower);
@@ -115,7 +115,7 @@ struct Thinker {
   hand *bestmove;
   size_t count;
   size_t index;
-  Table table;
+  Table& table;
   Evaluator evaluator;
   unsigned int *index_shared;
 
@@ -369,7 +369,7 @@ BatchedThinkTask::BatchedThinkTask(BatchedThinkTask&& that)
 
 void BatchedThinkTask::launch() const {
   think_kernel<<<grid_size, nodesPerBlock, sizeof(Node) * nodesPerBlock * think_lower_stack_depth, *str>>>(
-      abp, result, bestmove, thinker_stacks, size, depth, depth - think_lower_stack_depth, table, evaluator, total);
+      abp, result, bestmove, thinker_stacks, size, depth, depth - think_lower_stack_depth, table.weak_clone(), evaluator, total);
 }
 
 bool BatchedThinkTask::is_ready() const {
