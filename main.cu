@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 #include <tuple>
@@ -45,18 +46,26 @@ struct ThinkBatch {
   std::vector<std::string> vstr;
 };
 
-void think(char **argv) {
-  FILE *fp_in = fopen(argv[1], "r");
-  FILE *fp_out = fopen(argv[2], "w");
+struct FPCloser {
+  void operator()(FILE* const fp) const {
+    fclose(fp);
+  }
+};
+
+using file_ptr = std::unique_ptr<FILE, FPCloser>;
+
+void think(int argc, char **argv) {
+  file_ptr fp_in(fopen(argv[1], "r"));
+  file_ptr fp_out(fopen(argv[2], "w"));
   int max_depth = std::stoi(argv[3]);
   int depth = std::stoi(argv[4]);
   Evaluator evaluator("subboard.txt", "value/value52");
   int n;
-  fscanf(fp_in, "%d", &n);
+  fscanf(fp_in.get(), "%d", &n);
   std::vector<std::string> vboard(n);
   for (int i = 0; i < n; ++i) {
     char buf[17];
-    fscanf(fp_in, "%s", buf);
+    fscanf(fp_in.get(), "%s", buf);
     vboard[i] = buf;
   }
   std::sort(std::begin(vboard), std::end(vboard));
@@ -101,31 +110,23 @@ void think(char **argv) {
   for (const auto &b : vb) {
     total += *b.bt.total;
     for (int j = 0; j < b.bt.size; ++j) {
-      fprintf(fp_out, "%s %d %s\n", b.vstr[j].c_str(), b.bt.result[j],
+      fprintf(fp_out.get(), "%s %d %s\n", b.vstr[j].c_str(), b.bt.result[j],
           hand_to_s(b.bt.bestmove[j]).c_str());
     }
   }
   fprintf(stderr, "total nodes: %llu\n", total);
 }
 
-int main(int argc, char **argv) {
-  if (argc < 4) {
-    fprintf(stderr, "usage: %s INPUT OUTPUT DEPTH [THINK_DEPTH]\n", argv[0]);
-    return 1;
-  }
-  if (argc == 5) {
-    think(argv);
-    return 0;
-  }
-  FILE *fp_in = fopen(argv[1], "r");
-  FILE *fp_out = fopen(argv[2], "w");
+void solve(int argc, char **argv) {
+  file_ptr fp_in(fopen(argv[1], "r"));
+  file_ptr fp_out(fopen(argv[2], "w"));
   int max_depth = std::stoi(argv[3]);
   int n;
-  fscanf(fp_in, "%d", &n);
+  fscanf(fp_in.get(), "%d", &n);
   std::vector<std::string> vboard(n);
   for (int i = 0; i < n; ++i) {
     char buf[17];
-    fscanf(fp_in, "%s", buf);
+    fscanf(fp_in.get(), "%s", buf);
     vboard[i] = buf;
   }
   std::sort(std::begin(vboard), std::end(vboard));
@@ -170,8 +171,20 @@ int main(int argc, char **argv) {
   for (const auto &b : vb) {
     total += *b.bt.total;
     for (int j = 0; j < b.bt.size; ++j) {
-      fprintf(fp_out, "%s %d\n", b.vstr[j].c_str(), b.bt.result[j]);
+      fprintf(fp_out.get(), "%s %d\n", b.vstr[j].c_str(), b.bt.result[j]);
     }
   }
   fprintf(stderr, "total nodes: %llu\n", total);
+}
+
+int main(int argc, char **argv) {
+  if (argc < 4) {
+    fprintf(stderr, "usage: %s INPUT OUTPUT DEPTH [THINK_DEPTH]\n", argv[0]);
+    return 1;
+  }
+  if (argc == 5) {
+    think(argc, argv);
+    return 0;
+  }
+  solve(argc, argv);
 }
