@@ -27,7 +27,7 @@ clean:
 solver.o: to_board.hpp alphabeta.cuh solver.cuh types.hpp board.cuh table.cuh node.cuh
 thinker.o: to_board.hpp alphabeta.cuh thinker.cuh types.hpp board.cuh table.cuh eval.cuh node.cuh
 to_board.o: to_board.hpp types.hpp
-main.o: alphabeta.cuh solver.cuh thinker.cuh types.hpp table.cuh eval.cuh
+main.o: alphabeta.cuh solver.cuh thinker.cuh types.hpp table.cuh eval.cuh to_board.hpp
 board.o: board.cuh
 table.o: table.cuh board.cuh types.hpp
 eval.o: eval.cuh eval_host.hpp types.hpp
