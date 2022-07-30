@@ -36,16 +36,6 @@ std::string hand_to_s(const hand move) {
   }
 }
 
-struct Batch {
-  BatchedTask bt;
-  std::vector<std::string> vstr;
-};
-
-struct ThinkBatch {
-  BatchedThinkTask bt;
-  std::vector<std::string> vstr;
-};
-
 struct FPCloser {
   void operator()(FILE* const fp) const {
     fclose(fp);
@@ -54,49 +44,51 @@ struct FPCloser {
 
 using file_ptr = std::unique_ptr<FILE, FPCloser>;
 
+std::vector<Board> load_boards(const char* filename) {
+  file_ptr fp_in(fopen(filename, "r"));
+  int n;
+  fscanf(fp_in.get(), "%d", &n);
+  std::vector<Board> vboard(n);
+  for (int i = 0; i < n; ++i) {
+    char buf[17];
+    fscanf(fp_in.get(), "%s", buf);
+    vboard[i] = toBoard(buf);
+  }
+  std::sort(std::begin(vboard), std::end(vboard));
+  vboard.erase(std::unique(std::begin(vboard), std::end(vboard)), std::end(vboard));
+  return vboard;
+}
+
 void think(int argc, char **argv) {
-  file_ptr fp_in(fopen(argv[1], "r"));
+  const auto vboard = load_boards(argv[1]);
   file_ptr fp_out(fopen(argv[2], "w"));
   int max_depth = std::stoi(argv[3]);
   int depth = std::stoi(argv[4]);
   Evaluator evaluator("subboard.txt", "value/value52");
-  int n;
-  fscanf(fp_in.get(), "%d", &n);
-  std::vector<std::string> vboard(n);
-  for (int i = 0; i < n; ++i) {
-    char buf[17];
-    fscanf(fp_in.get(), "%s", buf);
-    vboard[i] = buf;
-  }
-  std::sort(std::begin(vboard), std::end(vboard));
-  vboard.erase(std::unique(std::begin(vboard), std::end(vboard)), std::end(vboard));
-  n = vboard.size();
+  size_t n = vboard.size();
   fprintf(stderr, "n = %d\n", n);
   constexpr size_t batch_size = 2000000;
   size_t batch_count = (n + batch_size - 1) / batch_size;
-  std::vector<ThinkBatch> vb;
+  std::vector<BatchedThinkTask> vb;
   constexpr size_t table_size = 50000001;
   Table table(table_size);
   for (size_t i = 0; i < batch_count; ++i) {
     int size = min(batch_size, n - i*batch_size);
     BatchedThinkTask bt(size, depth, table, evaluator);
-    std::vector<std::string> vstr(size);
     for (int j = 0; j < size; ++j) {
-      ull player, opponent;
-      std::tie(player, opponent) = toBoard(vboard[i*batch_size+j].c_str());
-      bt.abp[j] = AlphaBetaProblem(player, opponent);
-      vstr[j] = vboard[i*batch_size+j];
+      const auto [p, o] = vboard[i*batch_size+j];
+      bt.abp[j] = AlphaBetaProblem(p, o);
     }
-    vb.emplace_back(std::move((ThinkBatch){std::move(bt), vstr}));
+    vb.emplace_back(std::move(bt));
   }
   boost::timer::cpu_timer timer;
   for (const auto &b : vb) {
-    b.bt.launch();
+    b.launch();
   }
   while (true) {
     bool finished = true;
     for (const auto &b : vb) {
-      if (!b.bt.is_ready()) finished = false;
+      if (!b.is_ready()) finished = false;
     }
     if (finished) break;
   }
@@ -107,57 +99,46 @@ void think(int argc, char **argv) {
       timer.elapsed().wall/1000000000.0,
       *table.update_count, *table.hit_count, *table.lookup_count);
   ull total = 0;
+  char buf[17];
   for (const auto &b : vb) {
-    total += *b.bt.total;
-    for (int j = 0; j < b.bt.size; ++j) {
-      fprintf(fp_out.get(), "%s %d %s\n", b.vstr[j].c_str(), b.bt.result[j],
-          hand_to_s(b.bt.bestmove[j]).c_str());
+    total += *b.total;
+    for (int j = 0; j < b.size; ++j) {
+      fromBoard(Board(b.abp[j].player, b.abp[j].opponent), buf);
+      fprintf(fp_out.get(), "%s %d %s\n", buf, b.result[j],
+          hand_to_s(b.bestmove[j]).c_str());
     }
   }
   fprintf(stderr, "total nodes: %llu\n", total);
 }
 
 void solve(int argc, char **argv) {
-  file_ptr fp_in(fopen(argv[1], "r"));
+  const auto vboard = load_boards(argv[1]);
   file_ptr fp_out(fopen(argv[2], "w"));
   int max_depth = std::stoi(argv[3]);
-  int n;
-  fscanf(fp_in.get(), "%d", &n);
-  std::vector<std::string> vboard(n);
-  for (int i = 0; i < n; ++i) {
-    char buf[17];
-    fscanf(fp_in.get(), "%s", buf);
-    vboard[i] = buf;
-  }
-  std::sort(std::begin(vboard), std::end(vboard));
-  vboard.erase(std::unique(std::begin(vboard), std::end(vboard)), std::end(vboard));
-  n = vboard.size();
+  const size_t n = vboard.size();
   fprintf(stderr, "n = %d\n", n);
   constexpr size_t batch_size = 2000000;
   size_t batch_count = (n + batch_size - 1) / batch_size;
-  std::vector<Batch> vb;
+  std::vector<BatchedTask> vb;
   constexpr size_t table_size = 50000001;
   Table table(table_size);
   for (size_t i = 0; i < batch_count; ++i) {
     int size = min(batch_size, n - i*batch_size);
     BatchedTask bt(size, max_depth, table);
-    std::vector<std::string> vstr;
     for (int j = 0; j < size; ++j) {
-      ull player, opponent;
-      std::tie(player, opponent) = toBoard(vboard[i*batch_size+j].c_str());
-      bt.abp[j] = AlphaBetaProblem(player, opponent);
-      vstr.push_back(vboard[i*batch_size+j]);
+      const auto [p, o] = vboard[i*batch_size+j];
+      bt.abp[j] = AlphaBetaProblem(p, o);
     }
-    vb.emplace_back(std::move((Batch){std::move(bt), vstr}));
+    vb.emplace_back(std::move(bt));
   }
   boost::timer::cpu_timer timer;
   for (const auto &b : vb) {
-    b.bt.launch();
+    b.launch();
   }
   while (true) {
     bool finished = true;
     for (const auto &b : vb) {
-      if (!b.bt.is_ready()) finished = false;
+      if (!b.is_ready()) finished = false;
     }
     if (finished) break;
   }
@@ -168,10 +149,12 @@ void solve(int argc, char **argv) {
       timer.elapsed().wall/1000000000.0,
       *table.update_count, *table.hit_count, *table.lookup_count);
   ull total = 0;
+  char buf[17];
   for (const auto &b : vb) {
-    total += *b.bt.total;
-    for (int j = 0; j < b.bt.size; ++j) {
-      fprintf(fp_out.get(), "%s %d\n", b.vstr[j].c_str(), b.bt.result[j]);
+    total += *b.total;
+    for (int j = 0; j < b.size; ++j) {
+      fromBoard(Board(b.abp[j].player, b.abp[j].opponent), buf);
+      fprintf(fp_out.get(), "%s %d\n", buf, b.result[j]);
     }
   }
   fprintf(stderr, "total nodes: %llu\n", total);
