@@ -1,6 +1,6 @@
 NVCC=nvcc
-NVCCOPT=-g -std=c++14 --compiler-options -march=native -arch=sm_61 -m64 -O3 -lboost_timer -rdc=true
-CXXOPT=-std=c++14 -march=native -O3
+NVCCOPT=-g -std=c++17 --compiler-options -march=native -O3 -lboost_timer -rdc=true
+CXXOPT=-std=c++17 -march=native -O3
 OBJS=main.o solver.o thinker.o to_board.o board.o table.o eval.o eval_host.o
 
 .SUFFIXES: .cpp .c .cu .o
@@ -15,7 +15,7 @@ solver: $(OBJS)
 	$(NVCC) $(NVCCOPT) -c $< -o $@
 
 %.o : %.cpp
-	gcc-7 $(CXXOPT) -c $< -o $@
+	$(CXX) $(CXXOPT) -c $< -o $@
 
 %.cubin : %.cu
 	$(NVCC) -cubin $(NVCCOPT) -c $< -o $@
