@@ -11,6 +11,9 @@ all: solver
 solver: $(OBJS)
 	nvcc -o $@ $(NVCCOPT) $^
 
+test: test.o to_board.o
+	g++ -o $@ $(CXXOPT) $^
+
 %.o : %.cu
 	$(NVCC) $(NVCCOPT) -c $< -o $@
 
@@ -32,3 +35,4 @@ board.o: board.cuh
 table.o: table.cuh board.cuh types.hpp
 eval.o: eval.cuh eval_host.hpp types.hpp
 eval_host.o: eval_host.hpp types.hpp
+test.o: to_board.hpp
