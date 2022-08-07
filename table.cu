@@ -2,16 +2,16 @@
 #include "board.cuh"
 
 __host__ Table::Table(const size_t table_size) : size(table_size) {
-  cudaMallocManaged((void**)&entries, sizeof(Entry) * size);
-  cudaMallocManaged((void**)&mutex, sizeof(int) * size);
-  cudaMallocManaged((void**)&update_count, sizeof(ull));
-  cudaMallocManaged((void**)&hit_count, sizeof(ull));
-  cudaMallocManaged((void**)&lookup_count, sizeof(ull));
-  *update_count = 0;
-  *hit_count = 0;
-  *lookup_count = 0;
-  memset(entries, 0, sizeof(Entry) * size);
-  memset(mutex, 0, sizeof(int) * size);
+  cudaMalloc((void**)&entries, sizeof(Entry) * size);
+  cudaMalloc((void**)&mutex, sizeof(int) * size);
+  cudaMalloc((void**)&update_count, sizeof(ull));
+  cudaMalloc((void**)&hit_count, sizeof(ull));
+  cudaMalloc((void**)&lookup_count, sizeof(ull));
+  cudaMemset(update_count, 0, sizeof(ull));
+  cudaMemset(hit_count, 0, sizeof(ull));
+  cudaMemset(lookup_count, 0, sizeof(ull));
+  cudaMemset(entries, 0, sizeof(Entry) * size);
+  cudaMemset(mutex, 0, sizeof(int) * size);
 }
 
 __host__ Table::~Table() {
@@ -34,7 +34,7 @@ Table::Table(Table&& that)
 }
 
 __device__ Entry Table::find(ull player, ull opponent) const {
-  atomicAdd(lookup_count, 1);
+  atomicAdd(reinterpret_cast<unsigned long long*>(lookup_count), 1);
   ull hash = (player + 17 * opponent) % size;
   Entry result;
   for (int i = 0; i < 32; ++i) {
@@ -44,7 +44,7 @@ __device__ Entry Table::find(ull player, ull opponent) const {
       if (result.player != player || result.opponent != opponent) {
         result.enable = false;
       } else if (result.enable) {
-        atomicAdd(hit_count, 1);
+        atomicAdd(reinterpret_cast<unsigned long long*>(hit_count), 1);
       }
       unlock(hash);
     }
@@ -56,7 +56,7 @@ __device__ void Table::update(ull player, ull opponent, char upper, char lower, 
   if (upper <= lower) {
     return;
   }
-  atomicAdd(update_count, 1);
+  atomicAdd(reinterpret_cast<unsigned long long*>(update_count), 1);
   Entry entry;
   if (value > lower && value < upper) {
     entry = Entry(player, opponent, value, value);

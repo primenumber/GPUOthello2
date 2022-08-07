@@ -23,6 +23,21 @@ class Table {
   __host__ Table weak_clone() const {
     return Table(entries, mutex, size, update_count, hit_count, lookup_count, false);
   }
+  __host__ ull get_update_count() const {
+    ull result = 0;
+    cudaMemcpy(&result, update_count, sizeof(ull), cudaMemcpyDeviceToHost);
+    return result;
+  }
+  __host__ ull get_hit_count() const {
+    ull result = 0;
+    cudaMemcpy(&result, hit_count, sizeof(ull), cudaMemcpyDeviceToHost);
+    return result;
+  }
+  __host__ ull get_lookup_count() const {
+    ull result = 0;
+    cudaMemcpy(&result, lookup_count, sizeof(ull), cudaMemcpyDeviceToHost);
+    return result;
+  }
   Entry * entries;
   mutable int *mutex;
   size_t size;

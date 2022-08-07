@@ -1,3 +1,4 @@
 #pragma once
+#include <cstdint>
 
-using ull = unsigned long long;
+using ull = uint64_t;

@@ -344,7 +344,7 @@ __global__ void think_kernel(
     };
     thinker.thinker_stack[0] = ThinkerNode(problem.player, problem.opponent, -65, problem.alpha, problem.beta);
     ull nodes_count = thinker.think();
-    atomicAdd(nodes_total, nodes_count);
+    atomicAdd(reinterpret_cast<unsigned long long*>(nodes_total), nodes_count);
   }
 }
 

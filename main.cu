@@ -1,3 +1,5 @@
+#include <cinttypes>
+#include <cstdio>
 #include <algorithm>
 #include <iostream>
 #include <memory>
@@ -66,7 +68,7 @@ void think(int argc, char **argv) {
   int depth = std::stoi(argv[4]);
   Evaluator evaluator("subboard.txt", "value/value52");
   size_t n = vboard.size();
-  fprintf(stderr, "n = %d\n", n);
+  fprintf(stderr, "n = %zu\n", n);
   constexpr size_t batch_size = 2000000;
   size_t batch_count = (n + batch_size - 1) / batch_size;
   std::vector<BatchedThinkTask> vb;
@@ -93,11 +95,11 @@ void think(int argc, char **argv) {
     if (finished) break;
   }
   const auto status = cudaGetLastError();
-  fprintf(stderr, "%s (%s), elapsed: %.6fs, table update count: %llu, table hit: %llu, table find: %llu\n",
+  fprintf(stderr, "%s (%s), elapsed: %.6fs, table update count: %" PRId64 ", table hit: %" PRId64 ", table find: %" PRId64 "\n",
       cudaGetErrorName(status),
       cudaGetErrorString(status),
       timer.elapsed().wall/1000000000.0,
-      *table.update_count, *table.hit_count, *table.lookup_count);
+      table.get_update_count(), table.get_hit_count(), table.get_lookup_count());
   ull total = 0;
   char buf[17];
   for (const auto &b : vb) {
@@ -108,7 +110,7 @@ void think(int argc, char **argv) {
           hand_to_s(b.bestmove[j]).c_str());
     }
   }
-  fprintf(stderr, "total nodes: %llu\n", total);
+  fprintf(stderr, "total nodes: %" PRId64 "\n", total);
 }
 
 void solve(int argc, char **argv) {
@@ -116,7 +118,7 @@ void solve(int argc, char **argv) {
   file_ptr fp_out(fopen(argv[2], "w"));
   int max_depth = std::stoi(argv[3]);
   const size_t n = vboard.size();
-  fprintf(stderr, "n = %d\n", n);
+  fprintf(stderr, "n = %zu\n", n);
   constexpr size_t batch_size = 2000000;
   size_t batch_count = (n + batch_size - 1) / batch_size;
   std::vector<BatchedTask> vb;
@@ -131,6 +133,7 @@ void solve(int argc, char **argv) {
     }
     vb.emplace_back(std::move(bt));
   }
+  fprintf(stderr, "start!\n");
   boost::timer::cpu_timer timer;
   for (const auto &b : vb) {
     b.launch();
@@ -143,11 +146,11 @@ void solve(int argc, char **argv) {
     if (finished) break;
   }
   const auto status = cudaGetLastError();
-  fprintf(stderr, "%s (%s), elapsed: %.6fs, table update count: %llu, table hit: %llu, table find: %llu\n",
+  fprintf(stderr, "%s (%s), elapsed: %.6fs, table update count: %" PRId64 ", table hit: %" PRId64 ", table find: %" PRId64 "\n",
       cudaGetErrorName(status),
       cudaGetErrorString(status),
       timer.elapsed().wall/1000000000.0,
-      *table.update_count, *table.hit_count, *table.lookup_count);
+      table.get_update_count(), table.get_hit_count(), table.get_lookup_count());
   ull total = 0;
   char buf[17];
   for (const auto &b : vb) {
@@ -157,7 +160,7 @@ void solve(int argc, char **argv) {
       fprintf(fp_out.get(), "%s %d\n", buf, b.result[j]);
     }
   }
-  fprintf(stderr, "total nodes: %llu\n", total);
+  fprintf(stderr, "total nodes: %" PRId64 "\n", total);
 }
 
 int main(int argc, char **argv) {

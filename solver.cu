@@ -306,7 +306,7 @@ __global__ void alpha_beta_kernel(
     };
     solver.upper_stack[0] = UpperNode(problem.player, problem.opponent, -64, problem.alpha, problem.beta);
     ull nodes_count = solver.solve_all();
-    atomicAdd(nodes_total, nodes_count);
+    atomicAdd(reinterpret_cast<unsigned long long*>(nodes_total), nodes_count);
   }
 }
 
