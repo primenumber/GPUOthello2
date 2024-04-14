@@ -1,5 +1,5 @@
 NVCC=nvcc
-NVCCOPT=-g -std=c++17 --compiler-options -march=native -O3 -lboost_timer -rdc=true
+NVCCOPT=-g -std=c++17 --compiler-options -march=native -O3 -rdc=true
 CXXOPT=-std=c++17 -march=native -O3
 OBJS=main.o solver.o thinker.o to_board.o board.o table.o eval.o eval_host.o
 

@@ -1,4 +1,5 @@
 #include <cinttypes>
+#include <chrono>
 #include <cstdio>
 #include <algorithm>
 #include <iostream>
@@ -6,7 +7,6 @@
 #include <string>
 #include <vector>
 #include <tuple>
-#include <boost/timer/timer.hpp>
 #include "to_board.hpp"
 #include "solver.cuh"
 #include "thinker.cuh"
@@ -62,6 +62,7 @@ std::vector<Board> load_boards(const char* filename) {
 }
 
 void think(int argc, char **argv) {
+  using namespace std::literals;
   const auto vboard = load_boards(argv[1]);
   file_ptr fp_out(fopen(argv[2], "w"));
   int max_depth = std::stoi(argv[3]);
@@ -83,7 +84,7 @@ void think(int argc, char **argv) {
     }
     vb.emplace_back(std::move(bt));
   }
-  boost::timer::cpu_timer timer;
+  auto start = std::chrono::high_resolution_clock::now();
   for (const auto &b : vb) {
     b.launch();
   }
@@ -95,10 +96,11 @@ void think(int argc, char **argv) {
     if (finished) break;
   }
   const auto status = cudaGetLastError();
-  fprintf(stderr, "%s (%s), elapsed: %.6fs, table update count: %" PRId64 ", table hit: %" PRId64 ", table find: %" PRId64 "\n",
+  auto ended = std::chrono::high_resolution_clock::now();
+  fprintf(stderr, "%s (%s), elapsed: %ldms, table update count: %" PRId64 ", table hit: %" PRId64 ", table find: %" PRId64 "\n",
       cudaGetErrorName(status),
       cudaGetErrorString(status),
-      timer.elapsed().wall/1000000000.0,
+      (ended - start) / 1ms,
       table.get_update_count(), table.get_hit_count(), table.get_lookup_count());
   ull total = 0;
   char buf[17];
@@ -114,6 +116,7 @@ void think(int argc, char **argv) {
 }
 
 void solve(int argc, char **argv) {
+  using namespace std::literals;
   const auto vboard = load_boards(argv[1]);
   file_ptr fp_out(fopen(argv[2], "w"));
   int max_depth = std::stoi(argv[3]);
@@ -134,7 +137,7 @@ void solve(int argc, char **argv) {
     vb.emplace_back(std::move(bt));
   }
   fprintf(stderr, "start!\n");
-  boost::timer::cpu_timer timer;
+  auto start = std::chrono::high_resolution_clock::now();
   for (const auto &b : vb) {
     b.launch();
   }
@@ -146,10 +149,11 @@ void solve(int argc, char **argv) {
     if (finished) break;
   }
   const auto status = cudaGetLastError();
-  fprintf(stderr, "%s (%s), elapsed: %.6fs, table update count: %" PRId64 ", table hit: %" PRId64 ", table find: %" PRId64 "\n",
+  auto ended = std::chrono::high_resolution_clock::now();
+  fprintf(stderr, "%s (%s), elapsed: %ldms, table update count: %" PRId64 ", table hit: %" PRId64 ", table find: %" PRId64 "\n",
       cudaGetErrorName(status),
       cudaGetErrorString(status),
-      timer.elapsed().wall/1000000000.0,
+      (ended - start) / 1ms,
       table.get_update_count(), table.get_hit_count(), table.get_lookup_count());
   ull total = 0;
   char buf[17];
