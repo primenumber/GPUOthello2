@@ -52,8 +52,13 @@ std::vector<Board> load_boards(const char* filename) {
   fscanf(fp_in.get(), "%d", &n);
   std::vector<Board> vboard(n);
   for (int i = 0; i < n; ++i) {
-    char buf[17];
-    fscanf(fp_in.get(), "%s", buf);
+    char buf[33];
+    const auto ptr = fgets(buf, 32, fp_in.get());
+    if (ptr == nullptr) {
+      std::cerr << "Failed to load boards" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    //fscanf(fp_in.get(), "%s", buf);
     vboard[i] = toBoard(buf);
   }
   std::sort(std::begin(vboard), std::end(vboard));
