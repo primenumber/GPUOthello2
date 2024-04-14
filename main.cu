@@ -49,7 +49,7 @@ using file_ptr = std::unique_ptr<FILE, FPCloser>;
 std::vector<Board> load_boards(const char* filename) {
   file_ptr fp_in(fopen(filename, "r"));
   int n;
-  fscanf(fp_in.get(), "%d", &n);
+  fscanf(fp_in.get(), "%d\n", &n);
   std::vector<Board> vboard(n);
   for (int i = 0; i < n; ++i) {
     char buf[33];
