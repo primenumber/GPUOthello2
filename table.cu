@@ -33,7 +33,7 @@ Table::Table(Table&& that)
   that.enable = false;
 }
 
-__device__ Entry Table::find(ull player, ull opponent) const {
+__device__ Entry Table::find(ull player, ull opponent) {
   atomicAdd(reinterpret_cast<unsigned long long*>(lookup_count), 1);
   ull hash = (player + 17 * opponent) % size;
   Entry result;
@@ -52,7 +52,7 @@ __device__ Entry Table::find(ull player, ull opponent) const {
   return result;
 }
 
-__device__ void Table::update(ull player, ull opponent, char upper, char lower, char value) const {
+__device__ void Table::update(ull player, ull opponent, char upper, char lower, char value) {
   if (upper <= lower) {
     return;
   }
