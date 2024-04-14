@@ -333,7 +333,7 @@ void BatchedTask::launch() const {
 }
 
 bool BatchedTask::is_ready() const {
-  return cudaStreamQuery(*str) == cudaSuccess;
+  return cudaStreamQuery(*str) != cudaErrorNotReady;
 }
 
 BatchedTask::~BatchedTask() {
